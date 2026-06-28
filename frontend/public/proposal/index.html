@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PROPOSAL INOVASI TEKNOLOGI KOMUNITAS - LKS EKKA 2026</title>
+  <style>
+    /* --- CSS GLOBAL & LAYAR (SCREEN) --- */
+    body {
+      background-color: #f3f4f6; /* Warna abu-asap lembut untuk latar belakang layar */
+      margin: 0;
+      padding: 40px 15px;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #1f2937;
+      display: flex;
+      justify-content: center;
+    }
+
+    /* Container yang menstimulasi kertas A4 di browser */
+    .document-page {
+      background-color: #ffffff;
+      width: 100%;
+      max-width: 800px;
+      padding: 40px 50px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+      border-radius: 8px;
+      box-sizing: border-box;
+    }
+
+    /* Pengaturan tipografi premium di layar */
+    .document-content {
+      font-family: "Times New Roman", Times, serif;
+      font-size: 12pt;
+      line-height: 1.6;
+      color: #000000;
+      text-align: justify;
+    }
+
+    .cover-container {
+      text-align: center;
+      margin-bottom: 30pt;
+    }
+
+    h1 {
+      font-size: 16pt;
+      font-weight: bold;
+      text-align: center;
+      margin-top: 0;
+      margin-bottom: 18pt;
+      text-transform: uppercase;
+      line-height: 1.3;
+      color: #000000;
+    }
+
+    h2 {
+      font-size: 14pt;
+      font-weight: bold;
+      margin-top: 24pt;
+      margin-bottom: 12pt;
+      text-transform: uppercase;
+      page-break-after: avoid;
+      line-height: 1.3;
+      border-bottom: 1px solid #e5e7eb;
+      padding-bottom: 6px;
+      color: #000000;
+    }
+
+    h3 {
+      font-size: 12pt;
+      font-weight: bold;
+      margin-top: 16pt;
+      margin-bottom: 6px;
+      page-break-after: avoid;
+      color: #000000;
+    }
+
+    p {
+      margin-top: 0;
+      margin-bottom: 12pt;
+      text-indent: 1cm;
+      text-align: justify;
+    }
+
+    ul, ol {
+      margin-top: 0;
+      margin-bottom: 12pt;
+      padding-left: 24px;
+    }
+
+    li {
+      margin-bottom: 6pt;
+      text-align: justify;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12pt;
+      margin-bottom: 18pt;
+      font-size: 11pt;
+    }
+
+    table, th, td {
+      border: 1px solid #000000;
+    }
+
+    th {
+      background-color: #f3f4f6;
+      font-weight: bold;
+      text-align: center;
+      padding: 10px;
+    }
+
+    td {
+      padding: 10px;
+      vertical-align: top;
+    }
+
+    .profile-box {
+      border: 1px solid #000000;
+      padding: 15px;
+      margin-bottom: 24pt;
+      background-color: #f9fafb;
+      border-radius: 4px;
+    }
+
+    .profile-box ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .italic {
+      font-style: italic;
+    }
+
+    .divider {
+      border-top: 2px double #000000;
+      margin-top: 18pt;
+      margin-bottom: 18pt;
+    }
+
+    /* Informasi banner instruksi cetak di atas halaman (hanya muncul di layar) */
+    .print-banner {
+      background-color: #eff6ff;
+      border: 1px dashed #3b82f6;
+      color: #1e3a8a;
+      padding: 12px 20px;
+      margin-bottom: 20px;
+      border-radius: 6px;
+      font-family: system-ui, sans-serif;
+      font-size: 10.5pt;
+      line-height: 1.4;
+    }
+
+    .print-banner strong {
+      color: #1d4ed8;
+    }
+
+    /* --- CSS RESPONSIVE (MOBILE) --- */
+    @media (max-width: 768px) {
+      body {
+        padding: 15px 10px;
+      }
+      .document-page {
+        padding: 20px 15px;
+      }
+      h1 {
+        font-size: 14pt;
+        margin-bottom: 12pt;
+      }
+      h2 {
+        font-size: 13pt;
+        margin-top: 18pt;
+      }
+      h3 {
+        font-size: 11.5pt;
+      }
+      p {
+        text-indent: 0; /* Remove indent on mobile for better readability */
+        text-align: left; /* Avoid weird spacing from justify on small screens */
+      }
+      li {
+        text-align: left;
+      }
+      table {
+        display: block;
+        overflow-x: auto; /* Allow horizontal scroll for table on mobile */
+        white-space: nowrap;
+      }
+      .profile-box {
+        padding: 10px;
+      }
+    }
+
+    /* --- CSS KHUSUS CETAK PDF / PRINTER (PRINT MEDIA) --- */
+    @media print {
+      @page {
+        size: A4;
+        margin: 3cm; /* Margin wajib 3cm keliling */
+      }
+      body {
+        background-color: #ffffff;
+        padding: 0;
+        margin: 0;
+        display: block;
+      }
+      .print-banner {
+        display: none; /* Hilangkan banner bantuan saat dicetak ke PDF */
+      }
+      .document-page {
+        padding: 0;
+        box-shadow: none;
+        max-width: 100%;
+        border-radius: 0;
+      }
+      .document-content {
+        line-height: 1.5; /* Jarak baris ideal untuk Times New Roman */
+      }
+      h2 {
+        border-bottom: none;
+        padding-bottom: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="document-page">
+    
+
+
+    <div class="document-content">
+      
+      <div class="cover-container">
+        <h1>LAPORAN PROPOSAL INOVASI TEKNOLOGI<br>BIDANG LOMBA: KECERDASAN ARTIFISIAL (AI EXHIBITION)</h1>
+        <h1>LKS EKKA NASIONAL 2026</h1>
+      </div>
+
+      <div class="profile-box">
+        <strong>IDENTITAS PROYEK & TIM</strong>
+        <ul>
+          <li><strong>Nama Aplikasi:</strong> KOMUNITAS</li>
+          <li><strong>Studi Kasus:</strong> KOMUNITAS: Kesulitan Mengakses Informasi Layanan Publik yang Valid dan Mengatasi Penyebaran Hoaks</li>
+          <li><strong>Nama Tim:</strong> Tim Pencari Berkah</li>
+          <li><strong>Ketua Tim:</strong> Fachri Angga Pratama</li>
+          <li><strong>Anggota Tim:</strong> Fikri Awalludin Rahmat & Alif Ikhwan Aulad Alhafidz</li>
+          <li><strong>Pendidikan:</strong> SMK MARHAS Margahayu</li>
+          <li><strong>Pembimbing:</strong> Muhammad Taufiq Azhari</li>
+        </ul>
+      </div>
+
+      <div class="divider"></div>
+
+      <h2>1.1 Latar Belakang dan Analisis Permasalahan</h2>
+      <p>Akses terhadap informasi pelayanan publik yang valid merupakan pilar utama dalam mewujudkan tata kelola pemerintahan yang baik (<span class="italic">good governance</span>). Di tingkat nasional, Indonesia menghadapi kesenjangan yang cukup signifikan antara tingginya tingkat penetrasi internet dengan kapasitas literasi digital masyarakat yang masih berada di tingkat sedang. Kesenjangan ini menciptakan kerentanan yang luar biasa terhadap penyebaran berita bohong atau hoaks (<span class="italic">hoax</span>) yang bermuatan prosedur administratif palsu, penipuan bantuan sosial, serta desas-desus tata cara kependudukan. Meskipun regulasi mengenai keterbukaan informasi publik telah dicanangkan, pelaksanaan operasional di lapangan masih sering kali terbentur oleh lambatnya birokrasi dan keterbatasan saluran informasi yang ramah pengguna.</p>
+      
+      <p>Secara umum di tingkat komunitas lokal, dokumen regulasi dan persyaratan operasional pelayanan publik kerap disusun menggunakan bahasa hukum dan bahasa birokrasi (<span class="italic">legal-bureaucratic jargon</span>) yang kaku dan sulit dipahami warga awam. Asimetri informasi ini mendorong timbulnya praktik pungutan liar, pemerasan, serta ketergantungan terhadap jasa perantara (calo) akibat ketidakpastian informasi resmi. Celah kognitif ini membuktikan bahwa keberadaan portal informasi statis di situs web pemerintah belum mampu menjembatani kesenjangan pemahaman yang terjadi secara masif di tingkat akar rumput.</p>
+      
+      <p>Secara spesifik dan detail, permasalahan ini semakin memuncak pada penanganan laporan situasi darurat komunitas (seperti tindak kekerasan atau kebutuhan evakuasi medis) serta pemrosesan dokumen fisik warga. Sistem pelaporan konvensional sering kali lambat dalam memetakan lokasi koordinat pelapor secara presisi, sementara pengelola pengaduan kesulitan menentukan skala prioritas kedaruratan (<span class="italic">urgency scoring</span>) yang objektif. Di samping itu, mesin pencari konvensional di internet tidak dapat diandalkan karena sistem algoritmanya dirancang untuk mengutamakan iklan dan optimasi mesin pencari (<span class="italic">Search Engine Optimization</span>), bukan kebenaran hukum atau dokumen kependudukan resmi. Hal ini menyebabkan timbulnya risiko interpretasi yang keliru atau halusinasi informasi saat warga berupaya mencari panduan birokrasi secara mandiri.</p>
+      
+      <p>Oleh karena itu, diperlukan sebuah terobosan teknologi kecerdasan artifisial terintegrasi yang mampu bertindak sebagai jembatan kognitif bagi masyarakat. Melalui implementasi platform <strong>KOMUNITAS</strong>, kami menghadirkan solusi AI yang mampu mencari dokumen secara kontekstual dan memverifikasi fakta secara <span class="italic">real-time</span>, serta menyederhanakan bahasa birokrasi yang kompleks menjadi diagram alir visual yang interaktif bagi masyarakat Indonesia dengan tetap mengedepankan etika teknologi yang aman dan bertanggung jawab.</p>
+
+      <h2>1.2 Usulan Solusi Berbasis Kecerdasan Artifisial</h2>
+      <p>KOMUNITAS hadir sebagai ekosistem digital cerdas satu pintu (<span class="italic">one-stop cognitive ecosystem</span>) yang dirancang untuk mendemokratisasi akses informasi layanan publik dan memberdayakan komunitas warga dalam menghadapi infodemi. Mengusung visi yang berfokus pada kemanusiaan (<span class="italic">human-centric AI</span>), KOMUNITAS tidak hanya bertindak sebagai alat bantu administratif, melainkan sebagai instrumen transformasi sosial yang transparan dan inklusif.</p>
+      
+      <p>Untuk mewujudkan visi tersebut, KOMUNITAS menetapkan misi produk yang dijabarkan ke dalam tiga aspek operasional utama:</p>
+      <ol>
+        <li><strong>Integritas Data Maksimal:</strong> Menjamin seluruh informasi yang dikeluarkan oleh kecerdasan artifisial berbasis langsung pada dokumen kebijakan hukum dan administrasi yang sah dari instansi berwenang.</li>
+        <li><strong>Inklusivitas Antarmuka:</strong> Menyediakan fitur penyederhanaan bahasa dan visualisasi bagan otomatis agar informasi dapat diakses secara merata oleh warga dari berbagai tingkat literasi dan latar belakang pendidikan.</li>
+        <li><strong>Responsivitas Krisis:</strong> Mengotomatisasi sistem klasifikasi dan prioritas laporan darurat untuk mempercepat waktu penanganan kejadian di lapangan secara signifikan.</li>
+      </ol>
+
+      <p>Berikut adalah tabel matriks fitur inovasi KOMUNITAS yang dipetakan langsung berdasarkan analisis akar masalah dan parameter keberhasilan fungsional:</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th style="width: 25%">Nama Fitur Utama</th>
+            <th style="width: 50%">Deskripsi Fungsional Sistem</th>
+            <th style="width: 25%">Parameter Keberhasilan Teknis</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Asisten AI Chat (<span class="italic">RAG</span>)</td>
+            <td>Chatbot kognitif berbasis metode <span class="italic">Retrieval-Augmented Generation</span> untuk menjawab pertanyaan regulasi warga.</td>
+            <td>Menghasilkan jawaban yang tervalidasi oleh basis dokumen internal dengan tingkat akurasi tinggi.</td>
+          </tr>
+          <tr>
+            <td><span class="italic">Real-time Fact-Checker</span></td>
+            <td>Validasi kebenaran klaim berita hoaks menggunakan mesin pencari aktif dengan perhitungan skor kepercayaan (<span class="italic">confidence score</span>).</td>
+            <td>Menyajikan bukti rujukan artikel klarifikasi resmi dalam waktu kurang dari 5 detik setelah klaim diinput.</td>
+          </tr>
+          <tr>
+            <td><span class="italic">Vision AI OCR</span></td>
+            <td>Ekstraksi dan restrukturisasi data teks dari dokumen fisik (KTP/Surat pengantar) menjadi data JSON terstruktur.</td>
+            <td>Akurasi pembacaan karakter (<span class="italic">character recognition</span>) yang kompetitif pada kondisi standar.</td>
+          </tr>
+          <tr>
+            <td><span class="italic">Mermaid Flowchart Generator</span></td>
+            <td>Otomatisasi konversi teks birokrasi prosedural menjadi diagram alir visual interaktif berbasis kode <span class="italic">Mermaid.js</span>.</td>
+            <td>Menghasilkan diagram alir prosedural yang runtut, interaktif, dan mudah dipahami dalam sekali generasi.</td>
+          </tr>
+          <tr>
+            <td>Laporan Darurat dan GPS</td>
+            <td>Sistem pelaporan insiden darurat warga yang otomatis mendeteksi dan melampirkan titik koordinat GPS akurat.</td>
+            <td>Berhasil mendeteksi lokasi koordinat pengguna hingga radius akurasi di bawah 10 meter via browser API.</td>
+          </tr>
+          <tr>
+            <td><span class="italic">Urgency Scoring AI</span></td>
+            <td>Analisis kognitif terhadap teks aduan warga untuk menetapkan prioritas kedaruratan (Skala 1 s.d 5).</td>
+            <td>Klasifikasi tingkat kedaruratan memiliki tingkat konsistensi tinggi sesuai dengan parameter panduan keselamatan kerja.</td>
+          </tr>
+          <tr>
+            <td><span class="italic">Document Summarizer</span></td>
+            <td>Meringkas dokumen draf regulasi panjang menjadi kesimpulan eksekutif berupa poin-poin sederhana.</td>
+            <td>Pemangkas panjang teks draf dokumen hingga 80% tanpa menghilangkan konteks esensial dari hukum terkait.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Persona Pengguna (<span class="italic">User Persona</span>)</h3>
+      <p>KOMUNITAS dirancang dengan pendekatan yang berpusat pada pengguna (<span class="italic">user-centered design</span>) yang membagi aksesibilitas sistem ke dalam tiga peran fungsional:</p>
+      <ul>
+        <li><strong>Warga Sipil (Masyarakat Umum):</strong> Pengguna utama yang memerlukan kemudahan dalam melakukan verifikasi isu hoaks, mengajukan keluhan/laporan darurat secara cepat di lingkungan tempat tinggalnya, serta mencari petunjuk birokrasi tanpa perlu berhadapan langsung dengan istilah hukum yang rumit.</li>
+        <li><strong>Operator Dinas / Administrator (Pemerintah):</strong> Bertindak sebagai pengelola utama sistem yang memantau dinamika laporan warga melalui dasbor admin, memperbarui repositori dokumen layanan publik, dan melakukan validasi manual atas rekomendasi prioritas aduan yang diajukan oleh AI.</li>
+        <li><strong>Petugas Lapangan / Volunteer:</strong> Menggunakan data pengaduan darurat terintegrasi GPS dari platform KOMUNITAS untuk melakukan aksi penanganan krisis secara cepat dan akurat di lokasi kejadian.</li>
+      </ul>
+
+      <h2>1.3 Pemanfaatan Kecerdasan Artifisial</h2>
+      <p>KOMUNITAS menggabungkan kekuatan pemrosesan bahasa alami (<span class="italic">Natural Language Processing</span>), visi komputer (<span class="italic">Computer Vision</span>), dan sistem penemuan informasi hibrida untuk mencapai efisiensi kognitif yang optimal.</p>
+
+      <h3>1. Sistem Hybrid Search RAG Pipeline dan Reciprocal Rank Fusion (RRF)</h3>
+      <p>Untuk mewujudkan asisten chat yang bebas dari kesalahan informasi (halusinasi), KOMUNITAS menerapkan arsitektur <span class="italic">Retrieval-Augmented Generation</span> (RAG) tingkat lanjut. Ketika pengguna mengajukan pertanyaan, mesin pencari hibrida kami mengeksekusi dua metode pencarian secara simultan:</p>
+      <ul>
+        <li><span class="italic">Keyword Search</span> (BM25): Menghitung skor relevansi berbasis frekuensi kemunculan kata kunci eksak pada dokumen, sangat efektif untuk mencari istilah administrasi spesifik seperti "KTP", "akta", atau nomor undang-undang tertentu.</li>
+        <li><span class="italic">Vector Search</span> (<span class="italic">pgvector</span>): Mengonversi teks pertanyaan warga menjadi representasi vektor numerik berdimensi 1536 menggunakan model embedding <span class="italic">text-embedding-3-small</span>. Pencarian vektor berbasis kesamaan kosinus (<span class="italic">cosine similarity</span>) ini sangat unggul dalam menangkap intensi atau makna semantik pertanyaan warga meskipun kosakata yang digunakan berbeda dengan dokumen resmi.</li>
+        <li><span class="italic">Reciprocal Rank Fusion</span> (RRF): Menggabungkan hasil pencarian BM25 dan <span class="italic">Vector Search</span> untuk merumuskan skor gabungan yang adil. Dokumen dengan skor RRF tertinggi akan disaring dan dikirimkan ke model DeepSeek V4 Flash sebagai basis pengetahuan tunggal guna menghasilkan jawaban akhir yang akurat dan disertai anotasi referensi resmi.</li>
+      </ul>
+
+      <h3>2. Multi-Agent AI System</h3>
+      <p>Sistem KOMUNITAS membagi beban komputasi kecerdasan artifisial ke dalam beberapa agen spesifik:</p>
+      <ul>
+        <li><strong>Agen Penalaran (<span class="italic">Reasoning Agent</span>):</strong> Menggunakan model DeepSeek V4 Flash melalui integrasi OpenRouter API untuk menyusun jawaban konsultasi, melakukan kategorisasi prioritas laporan (<span class="italic">Urgency Scoring</span>), meringkas dokumen, dan merancang diagram alir <span class="italic">Mermaid.js</span>. DeepSeek V4 Flash dipilih karena memiliki rasio efisiensi token dan akurasi penalaran logis yang sangat kompetitif untuk bahasa Indonesia.</li>
+        <li><strong>Agen Penglihatan (<span class="italic">Vision AI Agent</span>):</strong> Mengandalkan model Google Gemini 2.5 Flash yang memiliki kapabilitas pengenalan karakter optik (<span class="italic">Optical Character Recognition</span> / OCR) multimodal tingkat tinggi. Agen ini mampu mengekstrak informasi terstruktur dari dokumen administratif fisik (seperti KTP, KK, atau surat pengantar dinas) meskipun foto dokumen diambil dalam kondisi pencahayaan yang kurang ideal atau posisi kamera miring.</li>
+        <li><strong>Agen Pemeriksa Fakta (<span class="italic">Fact-Checker Agent</span>):</strong> Mengintegrasikan API Serper.dev guna mengeksekusi pencarian Google secara instan saat pengguna memasukkan klaim berita. Hasil pencarian tersebut dianalisis silang oleh kecerdasan artifisial untuk menghitung skor kredibilitas berita.</li>
+      </ul>
+
+      <h3>Alur Input, Proses, dan Output Fitur AI</h3>
+      <ol>
+        <li><strong>AI Chatbot:</strong>
+          <ul>
+            <li><span class="italic">Input</span>: Pertanyaan natural dari pengguna mengenai suatu prosedur pelayanan publik.</li>
+            <li><span class="italic">Proses</span>: Ekstraksi embedding pertanyaan ➔ Pencarian hibrida pada basis data Supabase PostgreSQL ➔ Penggabungan peringkat dokumen dengan RRF ➔ Penyusunan prompt instruksi terbatas (<span class="italic">grounded prompt</span>) ➔ Generasi jawaban oleh DeepSeek V4 Flash.</li>
+            <li><span class="italic">Output</span>: Jawaban ramah, akurat, mudah dipahami, disertai rujukan pasal/dokumen resmi.</li>
+          </ul>
+        </li>
+        <li><strong>Real-time Fact-Checker:</strong>
+          <ul>
+            <li><span class="italic">Input</span>: Teks klaim berita atau isu hoaks yang beredar di masyarakat.</li>
+            <li><span class="italic">Proses</span>: AI memformulasikan kueri pencarian ➔ Serper.dev menarik artikel berita relevan dari mesin pencari ➔ Agen AI menganalisis keselarasan klaim dengan fakta resmi ➔ Kalkulasi skor kredibilitas berbasis reputasi sumber rujukan.</li>
+            <li><span class="italic">Output</span>: Klasifikasi status berita (Valid/Ragu-ragu/Hoaks), visualisasi persentase keyakinan, dan rangkuman bukti rujukan ilmiah.</li>
+          </ul>
+        </li>
+      </ol>
+
+      <h2>1.4 Pendekatan Teknis dan Sumber Data</h2>
+      <p>KOMUNITAS dibangun menggunakan arsitektur monorepo berkinerja tinggi yang menjamin kecepatan transfer data, keamanan data pengguna, dan kemudahan dalam melakukan pemeliharaan (<span class="italic">maintainability</span>).</p>
+
+      <h3>1. Struktur Arsitektur Sistem dan Stack Teknologi</h3>
+      <ul>
+        <li><strong>Sisi Klien (<span class="italic">Frontend</span>):</strong> Menggunakan framework React 18 yang dikombinasikan dengan Vite sebagai alat pembuat (<span class="italic">build tool</span>) berkecepatan tinggi. Bahasa pemrograman yang digunakan adalah TypeScript untuk menjamin kejelasan tipe data (<span class="italic">type safety</span>) di seluruh komponen. Desain antarmuka memanfaatkan Tailwind CSS dan pustaka komponen <strong>shadcn/ui</strong> untuk menciptakan tampilan antarmuka yang premium, responsif, dan rapi sesuai standar estetika modern, serta Framer Motion untuk mengelola animasi mikro-interaksi yang interaktif.</li>
+        <li><strong>Sisi Server (<span class="italic">Backend</span>):</strong> Menggunakan runtime <strong>Bun</strong> (sebagai alternatif Node.js yang jauh lebih cepat) dan framework web <strong>Hono</strong> yang sangat andal dalam melayani permintaan rute API dengan latensi minimal.</li>
+        <li><strong>Sistem Penyimpanan (<span class="italic">Database</span>):</strong> Menggunakan <strong>Supabase PostgreSQL</strong> yang dikonfigurasi dengan ekstensi <span class="italic">pgvector</span> dan skema indeks HNSW (<span class="italic">Hierarchical Navigable Small World</span>) untuk memastikan pencarian vektor embedding semantik dapat diselesaikan dalam waktu kurang dari satu detik pada jutaan data regulasi.</li>
+      </ul>
+
+      <h3>2. Sumber Data</h3>
+      <ul>
+        <li><strong>Data Regulasi Layanan Publik:</strong> Mengimpor draf peraturan perundang-undang, buku panduan prosedur administrasi kependudukan, standar layanan evakuasi medis darurat (PMI), protokol penanganan kekerasan terhadap anak (KPAI), dan panduan advokasi hak asasi manusia (Komnas HAM) yang telah dikurasi dan divalidasi kebenaran hukumnya.</li>
+        <li><strong>Data Penelusuran Web (Serper.dev):</strong> Akses dinamis ke indeks Google Search untuk mengambil artikel klarifikasi fakta dan berita terbaru yang valid guna mengevaluasi klaim pengguna secara <span class="italic">real-time</span>.</li>
+        <li><strong>Data Sintetis Terarah:</strong> Data buatan yang dirancang untuk mensimulasikan berbagai variasi logat, istilah daerah, dan kesalahan ketik (<span class="italic">typo</span>) dari pertanyaan warga guna menguji ketahanan model pencarian semantik sebelum diimplementasikan secara luas.</li>
+      </ul>
+
+      <h3>3. Skalabilitas dan Keamanan Sistem</h3>
+      <p>Untuk menjamin kestabilan dan keamanan sistem dari serangan luar, kami mengimplementasikan tiga protokol pengamanan utama:</p>
+      <ul>
+        <li><span class="italic">JSON Web Token</span> (JWT): Mengamankan seluruh sesi komunikasi antara klien dan server, khususnya pada area administratif dasbor pemerintah.</li>
+        <li><span class="italic">Cross-Origin Resource Sharing</span> (CORS) Protection: Membatasi rute akses API backend hanya untuk domain frontend resmi yang terdaftar, mencegah eksploitasi data oleh pihak luar.</li>
+        <li><span class="italic">Rate Limiter</span>: Membatasi lalu lintas permintaan API maksimal <strong>60 request per menit per alamat IP</strong> guna memitigasi risiko serangan <span class="italic">Denial of Service</span> (DoS) dan menjaga penggunaan token API LLM dari pemborosan biaya komputasi.</li>
+      </ul>
+
+      <h2>1.5 Responsible AI (Kecerdasan Artifisial yang Bertanggung Jawab)</h2>
+      <p>Sistem KOMUNITAS menjunjung tinggi aspek etika kecerdasan artifisial sebagai bagian dari kepatuhan terhadap pengembangan teknologi nasional yang bermoral, transparan, dan berpusat pada keselamatan manusia. Implementasi prinsip <span class="italic">Responsible AI</span> dalam platform ini didasarkan pada kerangka kerja tepercaya yang mencakup mitigasi risiko, mitigasi bias, jaminan transparansi, serta pelibatan manusia secara aktif.</p>
+
+      <h3>1. Identifikasi Risiko dan Strategi Mitigasi</h3>
+      <ul>
+        <li><strong>Risiko Halusinasi Model (<span class="italic">Model Hallucination</span>):</strong> Kemungkinan model bahasa besar menghasilkan persyaratan administratif fiktif yang dapat menyesatkan warga.
+          <ul>
+            <li><span class="italic">Mitigasi</span>: Kami menerapkan metode batasan konteks ketat (<span class="italic">strict context constraint</span>) pada <span class="italic">RAG Pipeline</span>. Jika dokumen rujukan tidak ditemukan dalam basis data internal atau hasil penelusuran <span class="italic">Serper.dev</span> yang sah, model AI diinstruksikan secara keras untuk menyatakan ketidaktahuan, alih-alih berspekulasi atau mengarang jawaban.</li>
+          </ul>
+        </li>
+        <li><strong>Risiko Kebocoran Data Pribadi (<span class="italic">Privacy Breach</span>):</strong> Kerentanan saat warga mengunggah gambar dokumen fisik (seperti KTP atau Kartu Keluarga) yang mengandung data sensitif.
+          <ul>
+            <li><span class="italic">Mitigasi</span>: Kami mengimplementasikan penyaringan data sensitif otomatis (<span class="italic">Personally Identifiable Information Redaction</span>) di sisi server sebelum dikirimkan ke penyedia layanan model bahasa. Sistem mendeteksi dan mengaburkan informasi sensitif seperti nomor identitas, tanda tangan, dan alamat detail guna melindungi privasi warga.</li>
+          </ul>
+        </li>
+      </ul>
+
+      <h3>2. Mitigasi Bias Algoritma</h3>
+      <p>Bias dalam sistem AI dapat merugikan kelompok masyarakat tertentu, misalnya karena perbedaan logat, kosakata, atau dialek daerah dalam menyampaikan aduan. Untuk mengatasi hal ini, KOMUNITAS menerapkan strategi mitigasi bias yang proaktif:</p>
+      <ul>
+        <li><strong>Standardisasi Kriteria Penilaian:</strong> Agen pembobotan urgensi (<span class="italic">Urgency Scoring AI</span>) dilatih menggunakan parameter objektif berbasis data kualitatif keselamatan (seperti ancaman keselamatan jiwa, kerusakan infrastruktur fatal, atau kedaruratan medis) tanpa dipengaruhi oleh gaya bahasa, tingkat formalitas, atau dialek pengaduan yang digunakan warga.</li>
+        <li><strong>Keberagaman Data Pengujian:</strong> Sistem penelusuran semantik diuji menggunakan variasi bahasa non-formal, kesalahan ketik (<span class="italic">typo</span>), serta istilah-istilah kedaerahan yang lazim di Indonesia guna memastikan performa pencarian tetap inklusif bagi seluruh lapisan masyarakat.</li>
+      </ul>
+
+      <h3>3. Jaminan Transparansi dan Akuntabilitas (<span class="italic">Explainability</span>)</h3>
+      <p>Kami meyakini bahwa teknologi pelayanan publik tidak boleh berupa kotak hitam (<span class="italic">black box</span>) yang tidak dapat dijelaskan. Oleh karena itu, KOMUNITAS menjamin transparansi operasional melalui:</p>
+      <ul>
+        <li><strong>Anotasi Sumber Terbuka (<span class="italic">Source Citation</span>):</strong> Setiap jawaban yang dihasilkan oleh asisten chat wajib mencantumkan tautan aktif atau rujukan bab, pasal, dan dokumen regulasi resmi pemerintah yang menjadi landasannya, sehingga warga dapat melakukan verifikasi mandiri secara instan.</li>
+        <li><strong>Penjelasan Metrik Keyakinan (<span class="italic">Confidence Level</span>):</strong> Fitur pemeriksa fakta menyertakan kalkulasi skor kepercayaan tepercaya secara visual, yang memaparkan secara terbuka bagaimana AI menyimpulkan status validitas suatu klaim informasi.</li>
+      </ul>
+
+      <h3>4. Penerapan Konsep Pengawasan Manusia (<span class="italic">Human-in-the-Loop</span>)</h3>
+      <p>Kecerdasan artifisial dalam proyek KOMUNITAS bertindak sebagai asisten kognitif yang mempercepat proses analisis, bukan sebagai pengambil keputusan akhir (<span class="italic">final decision maker</span>). Dalam alur pelaporan darurat, AI bertugas melakukan pembobotan awal tingkat urgensi guna membantu organisasi menyaring ribuan aduan. Namun, keputusan pengerahan unit penyelamatan, tindakan tanggap darurat di lapangan, serta validasi administratif final sepenuhnya tetap berada di bawah kendali operator manusia (administrator dinas terkait). Dengan skema ini, akuntabilitas hukum dan keputusan etis tetap dipegang penuh oleh otoritas manusia yang sah.</p>
+
+      <h2>1.6 Dampak dan Potensi Implementasi</h2>
+      <p>Proyek KOMUNITAS dirancang untuk membawa perubahan transformatif yang luas pada tata kelola informasi publik dan koordinasi penanganan krisis sosial.</p>
+
+      <h3>1. Dampak Sosial bagi Masyarakat</h3>
+      <ul>
+        <li><strong>Penyetaraan Akses Informasi:</strong> Menghilangkan hambatan kognitif bagi warga kurang mampu atau kelompok rentan dalam memahami draf hukum birokrasi, sehingga mendorong tercapainya kesetaraan hak administratif.</li>
+        <li><strong>Perlindungan terhadap Penipuan Digital:</strong> Menurunkan kerugian material warga akibat penipuan bermodus bantuan pemerintah secara drastis melalui ketersediaan alat cek fakta hoaks mandiri yang instan dan kredibel.</li>
+      </ul>
+
+      <h3>2. Dampak bagi Penyelenggara Layanan Publik</h3>
+      <ul>
+        <li><strong>Efisiensi Sumber Daya:</strong> Diharapkan dapat mengurangi beban operasional penanganan keluhan berulang secara signifikan, memungkinkan aparat pemerintah mengalokasikan fokusnya pada pelayanan masyarakat yang bersifat strategis dan membutuhkan empati kemanusiaan.</li>
+        <li><strong>Pemerintahan Berbasis Data (<span class="italic">Data-Driven Governance</span>):</strong> Menyediakan statistik sebaran pengaduan warga secara <span class="italic">real-time</span> kepada pemerintah guna merumuskan kebijakan pembangunan sosial yang tepat sasaran.</li>
+      </ul>
+
+      <h3>3. Kontribusi terhadap Sustainable Development Goals (SDGs)</h3>
+      <ul>
+        <li><strong>SDG 16 (Perdamaian, Keadilan, dan Kelembagaan yang Tangguh):</strong> Mendorong terciptanya kelembagaan pelayanan publik yang transparan, bersih, bebas pungutan liar, dan akuntabel di mata hukum.</li>
+        <li><strong>SDG 9 (Industri, Inovasi, dan Infrastruktur):</strong> Mendorong inovasi kecerdasan artifisial di tingkat lokal sebagai bagian dari pembangunan infrastruktur digital nasional yang mandiri.</li>
+        <li><strong>SDG 10 (Berkurangnya Kesenjangan):</strong> Menjamin tidak adanya diskriminasi dalam penyebaran informasi publik dengan menyediakan asisten ramah pengguna bagi lansia dan kelompok marginal.</li>
+      </ul>
+
+      <h3>4. Peta Jalan Implementasi (<span class="italic">Roadmap</span>)</h3>
+      <p>Untuk memastikan keberhasilan implementasi platform KOMUNITAS, kami merancang peta jalan pengembangan dan penyebaran yang terbagi dalam tiga fase terstruktur:</p>
+      <ul>
+        <li><strong>Fase 1: Pengembangan dan Validasi Basis Pengetahuan (Bulan 1 - 2):</strong> Fokus pada integrasi basis data regulasi lokal, pengujian akurasi pencarian hibrida (<span class="italic">RAG</span>), standardisasi mitigasi bias algoritma, serta audit keamanan siber awal.</li>
+        <li><strong>Fase 2: Uji Coba Terbatas dan Pelatihan Operator (Bulan 3 - 4):</strong> Peluncuran versi purwarupa di tingkat rukun tetangga/warga (<span class="italic">RT/RW</span>) percontohan, pelatihan teknis bagi operator dinas terkait mengenai pengawasan sistem <span class="italic">human-in-the-loop</span>, serta evaluasi kestabilan server di bawah pengawasan langsung.</li>
+        <li><strong>Fase 3: Peluncuran Publik dan Evaluasi Dampak (Bulan 5 - 6):</strong> Penyebaran platform KOMUNITAS secara luas di tingkat kecamatan/kabupaten, pengumpulan umpan balik dari pengguna aktif, audit performa model kecerdasan artifisial secara berkala, serta sinkronisasi data pelaporan darurat lintas sektoral.</li>
+      </ul>
+
+      <div class="divider"></div>
+
+      <h2>Kesimpulan</h2>
+      <p>KOMUNITAS merupakan representasi nyata dari bagaimana kecerdasan artifisial dapat dimanfaatkan secara cerdas, inovatif, dan beretika untuk mengatasi kesenjangan informasi pelayanan publik. Memadukan keunggulan teknis sistem pencarian hibrida, pengolahan agen kognitif multi-model, serta kepatuhan ketat terhadap aspek <span class="italic">Responsible AI</span>, proyek KOMUNITAS siap dinilai sebagai solusi terbaik berstandar nasional yang berdampak besar bagi kesejahteraan seluruh rakyat Indonesia dalam ajang LKS EKKA Nasional 2026.</p>
+
+    </div>
+  </div>
+
+</body>
+</html>

@@ -1,0 +1,1269 @@
+/**
+ * Controller untuk menangani semua request terkait chat, verifikasi, ringkasan, OCR, dan laporan warga
+ * Mengelola endpoint API dan logika bisnis
+ */
+
+import { Context } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import crypto from 'crypto';
+import { 
+  callAI, 
+  callAIStream,
+  createSystemPrompt, 
+  validateClaim, 
+  summarizeDocument,
+  extractTextFromImage
+} from '../services/openRouterService';
+import { 
+  saveChatHistory, 
+  getChatHistory,
+  deleteChatHistory,
+  supabase
+} from '../services/supabaseService';
+import { getEmbedding } from '../services/embeddingService';
+import { searchMultiPhase, SearchResultItem } from '../services/searchService';
+import { ChatMessage, ClaimValidationResult, SummaryResult } from '../types';
+import { logger } from '../utils/logger';
+import { z } from 'zod';
+import { checkGuardrails, GUARDRAIL_REFUSAL } from '../utils/guardrails';
+import { extractTextFromFile } from '../services/fileExtractService';
+
+// --- Validation Schemas ---
+
+/**
+ * Schema validasi untuk request chat menggunakan Zod
+ */
+const chatSchema = z.object({
+  message: z.string().default(''),
+  sessionId: z.string().optional(),
+  image: z.string().optional(),
+  mimeType: z.string().optional(),
+});
+
+const validateSchema = z.object({
+  claim: z.string().min(3, 'Klaim terlalu pendek'),
+  image: z.string().optional(),
+  mimeType: z.string().optional(),
+});
+
+const summarizeSchema = z.object({
+  text: z.string().min(10, 'Teks terlalu pendek untuk diringkas'),
+});
+
+const ocrSchema = z.object({
+  image: z.string().min(1, 'Data gambar base64 tidak boleh kosong'),
+  mimeType: z.string().default('image/jpeg'),
+});
+
+export const reportSchema = z.object({
+  reporterName: z.string().min(1, 'Nama pelapor tidak boleh kosong'),
+  reporterContact: z.string().min(1, 'Kontak pelapor tidak boleh kosong'),
+  category: z.string().min(1, 'Kategori tidak boleh kosong'),
+  description: z.string().min(1, 'Deskripsi laporan tidak boleh kosong'),
+  sessionId: z.string().optional(),
+  latitude: z.number({ message: 'Koordinat lokasi GPS (latitude) wajib disertakan' }),
+  longitude: z.number({ message: 'Koordinat lokasi GPS (longitude) wajib disertakan' }),
+  image: z.string().optional(),
+});
+
+// --- Controllers ---
+
+/**
+ * Chat Controller - Endpoint utama untuk chat dengan RAG pipeline
+ * POST /api/chat
+ */
+export const chatController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = chatSchema.parse(body);
+    
+    logger.info('📨 Chat request received:', {
+      message: validated.message ? (validated.message.substring(0, 50) + '...') : '',
+      hasImage: !!validated.image,
+      sessionId: validated.sessionId || 'new'
+    });
+
+    if (!validated.message && !validated.image) {
+      return c.json({ error: 'Validasi gagal', message: 'Pesan atau gambar harus dikirim' }, 400);
+    }
+
+    const sessionId = validated.sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    
+    // --- LOCAL AI GUARDRAILS (AI RESPONSIBILITY) ---
+    if (validated.message && checkGuardrails(validated.message)) {
+      logger.info('🛡️ Guardrails triggered (local blocking) for message:', validated.message);
+      return c.json({
+        content: GUARDRAIL_REFUSAL,
+        sessionId,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    let history = await getChatHistory(sessionId) || [];
+    
+    // --- RAG PIPELINE ---
+    let ragContext = '';
+    if (validated.message) {
+      try {
+        const queryVector = await getEmbedding(validated.message);
+        const { data: matchedServices, error: rpcError } = await supabase.rpc('match_services', {
+          query_embedding: queryVector,
+          match_threshold: 0.35,
+          match_count: 2
+        });
+
+        if (rpcError) {
+          logger.error('❌ Supabase RAG RPC error:', rpcError);
+        } else if (matchedServices && matchedServices.length > 0) {
+          logger.info(`🔍 RAG: Found ${matchedServices.length} matching services`);
+          
+          ragContext = `\n\nREFERENSI DOKUMEN LAYANAN PUBLIK YANG RELEVAN DI DATABASE:\n` +
+            matchedServices.map((s: any) => 
+              `Layanan: ${s.name}\n` +
+              `Lembaga: ${s.institution}\n` +
+              `Kategori: ${s.category}\n` +
+              `Deskripsi: ${s.description}\n` +
+              `Syarat Dokumen: ${JSON.stringify(s.requirements)}\n` +
+              `Langkah Prosedur: ${JSON.stringify(s.procedures)}\n` +
+              `Kontak Resmi: ${s.contact_phone || '-'} | ${s.contact_email || '-'}\n` +
+              `Alamat: ${s.address || '-'}\n` +
+              `Link Resmi: ${s.website || '-'}\n` +
+              `---`
+            ).join('\n');
+        }
+      } catch (e) {
+        logger.error('⚠️ RAG pipeline failed, falling back to standard LLM chat:', e);
+      }
+    }
+
+    const systemPromptText = createSystemPrompt() + (ragContext ? ragContext : '');
+    
+    // Construct user content for this turn (text or multimodal)
+    const userContent = validated.image
+      ? [
+          { type: 'text', text: validated.message || 'Minta tolong analisis gambar ini.' },
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:${validated.mimeType || 'image/jpeg'};base64,${validated.image}`
+            }
+          }
+        ]
+      : validated.message;
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: systemPromptText },
+      ...history.map((h: any) => ({
+        role: h.role as 'user' | 'assistant' | 'system',
+        content: h.content,
+      })),
+      { role: 'user', content: userContent },
+    ];
+
+    const response = await callAI(messages);
+
+    const updatedHistory = [
+      ...history,
+      { role: 'user', content: userContent },
+      { role: 'assistant', content: response },
+    ];
+    
+    await saveChatHistory(sessionId, updatedHistory);
+
+    return c.json({
+      content: response,
+      sessionId,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      logger.warn('⚠️ Validation error:', error.issues);
+      return c.json({ 
+        error: 'Validasi gagal', 
+        details: error.issues.map(e => e.message) 
+      }, 400);
+    }
+    
+    logger.error('❌ Chat controller error:', error);
+    return c.json({ 
+      error: 'Terjadi kesalahan. Silakan coba lagi.',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Chat Stream Controller - Endpoint streaming SSE untuk chat dengan RAG + Search
+ * POST /api/chat/stream
+ */
+export const chatStreamController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = chatSchema.parse(body);
+    
+    logger.info('📨 Chat streaming request received:', {
+      message: validated.message ? (validated.message.substring(0, 50) + '...') : '',
+      hasImage: !!validated.image,
+      sessionId: validated.sessionId || 'new'
+    });
+
+    if (!validated.message && !validated.image) {
+      return c.json({ error: 'Validasi gagal', message: 'Pesan atau gambar harus dikirim' }, 400);
+    }
+
+    const sessionId = validated.sessionId || `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+    // --- LOCAL AI GUARDRAILS (AI RESPONSIBILITY) ---
+    if (validated.message && checkGuardrails(validated.message)) {
+      logger.info('🛡️ Guardrails triggered (local blocking) for streaming message:', validated.message);
+      c.header('Content-Type', 'text/event-stream');
+      c.header('Cache-Control', 'no-cache');
+      c.header('Connection', 'keep-alive');
+      return streamSSE(c, async (stream) => {
+        // Stream the guardrail refusal message
+        const tokens = GUARDRAIL_REFUSAL.split(" ");
+        for (const token of tokens) {
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: 'token',
+              content: token + " "
+            })
+          });
+          // Small delay for natural typing appearance
+          await new Promise(resolve => setTimeout(resolve, 30));
+        }
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: 'done',
+            sessionId
+          })
+        });
+      });
+    }
+
+    // Set headers explicitly for SSE to bypass any issues, though streamSSE does it
+    c.header('Content-Type', 'text/event-stream');
+    c.header('Cache-Control', 'no-cache');
+    c.header('Connection', 'keep-alive');
+
+    return streamSSE(c, async (stream) => {
+      let history = await getChatHistory(sessionId) || [];
+      
+      // --- RAG PIPELINE ---
+      let ragContext = '';
+      if (validated.message) {
+        try {
+          const queryVector = await getEmbedding(validated.message);
+          const { data: matchedServices, error: rpcError } = await supabase.rpc('match_services', {
+            query_embedding: queryVector,
+            match_threshold: 0.35,
+            match_count: 2
+          });
+
+          if (rpcError) {
+            logger.error('❌ Supabase RAG RPC error:', rpcError);
+          } else if (matchedServices && matchedServices.length > 0) {
+            logger.info(`🔍 RAG: Found ${matchedServices.length} matching services`);
+            
+            ragContext = `\n\nREFERENSI DOKUMEN LAYANAN PUBLIK YANG RELEVAN DI DATABASE:\n` +
+              matchedServices.map((s: any) => 
+                `Layanan: ${s.name}\n` +
+                `Lembaga: ${s.institution}\n` +
+                `Kategori: ${s.category}\n` +
+                `Deskripsi: ${s.description}\n` +
+                `Syarat Dokumen: ${JSON.stringify(s.requirements)}\n` +
+                `Langkah Prosedur: ${JSON.stringify(s.procedures)}\n` +
+                `Kontak Resmi: ${s.contact_phone || '-'} | ${s.contact_email || '-'}\n` +
+                `Alamat: ${s.address || '-'}\n` +
+                `Link Resmi: ${s.website || '-'}\n` +
+                `---`
+              ).join('\n');
+          }
+        } catch (e) {
+          logger.error('⚠️ RAG pipeline failed, falling back to standard LLM chat:', e);
+        }
+      }
+
+      // --- MULTI-PHASE SEARCH PIPELINE ---
+      let searchResults: SearchResultItem[] = [];
+      if (validated.message) {
+        try {
+          searchResults = await searchMultiPhase(validated.message, async (progress) => {
+            await stream.writeSSE({
+              data: JSON.stringify({
+                type: 'search_progress',
+                phase: progress.phase,
+                count: progress.count,
+                sites: progress.sites
+              })
+            });
+          });
+
+          // Send all search results
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: 'search_result',
+              items: searchResults
+            })
+          });
+        } catch (searchErr) {
+          logger.error('❌ Search multi-phase failed:', searchErr);
+        }
+      }
+
+      let searchContext = '';
+      if (searchResults.length > 0) {
+        searchContext = `\n\nHASIL PENELUSURAN INTERNET TERBARU (Gunakan ini sebagai rujukan utama Anda):\n` +
+          searchResults.map((r, idx) => 
+            `Sumber #${idx + 1}:\n` +
+            `Judul: ${r.title}\n` +
+            `Link: ${r.link}\n` +
+            `Kutipan: ${r.snippet}\n` +
+            `Website: ${r.source || 'Web'}\n` +
+            `---`
+          ).join('\n');
+      }
+
+      const systemPromptText = createSystemPrompt() + (ragContext ? ragContext : '') + (searchContext ? searchContext : '');
+      
+      // Construct user content for this turn (text or multimodal)
+      const userContent = validated.image
+        ? [
+            { type: 'text', text: validated.message || 'Minta tolong analisis gambar ini.' },
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${validated.mimeType || 'image/jpeg'};base64,${validated.image}`
+              }
+            }
+          ]
+        : validated.message;
+
+      const messages: ChatMessage[] = [
+        { role: 'system', content: systemPromptText },
+        ...history.map((h: any) => ({
+          role: h.role as 'user' | 'assistant' | 'system',
+          content: h.content,
+        })),
+        { role: 'user', content: userContent },
+      ];
+
+      // Stream AI tokens
+      let assistantContent = '';
+      try {
+        await callAIStream(messages, async (token) => {
+          assistantContent += token;
+          await stream.writeSSE({
+            data: JSON.stringify({
+              type: 'token',
+              content: token
+            })
+          });
+        });
+      } catch (aiErr: any) {
+        logger.error('❌ Streaming AI failed:', aiErr);
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: 'error',
+            message: aiErr.message || 'Gagal menghasilkan respons AI secara streaming.'
+          })
+        });
+        return;
+      }
+
+      // Save history & end stream
+      try {
+        const updatedHistory = [
+          ...history,
+          { role: 'user', content: userContent },
+          { role: 'assistant', content: assistantContent },
+        ];
+        
+        await saveChatHistory(sessionId, updatedHistory);
+
+        await stream.writeSSE({
+          data: JSON.stringify({
+            type: 'done',
+            sessionId
+          })
+        });
+      } catch (saveErr) {
+        logger.error('❌ Failed to save streaming chat history:', saveErr);
+      }
+    });
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      logger.warn('⚠️ Validation error:', error.issues);
+      return c.json({ 
+        error: 'Validasi gagal', 
+        details: error.issues.map(e => e.message) 
+      }, 400);
+    }
+    
+    logger.error('❌ Chat stream controller error:', error);
+    return c.json({ 
+      error: 'Terjadi kesalahan. Silakan coba lagi.',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * OCR Controller - Mengekstrak teks dari gambar dokumen (Mendukung multipart/form-data & JSON)
+ * POST /api/chat/ocr
+ */
+export const ocrController = async (c: Context) => {
+  try {
+    let base64Data = '';
+    let mimeType = 'image/jpeg';
+
+    const contentType = c.req.header('content-type') || '';
+
+    // Deteksi jika input dikirim via Multipart Form Data (seperti React Frontend)
+    if (contentType.includes('multipart/form-data')) {
+      const body = await c.req.parseBody();
+      const file = body['file'];
+
+      if (!file || !(file instanceof File)) {
+        return c.json({ error: 'Validasi gagal', message: 'File dokumen tidak ditemukan atau tidak valid' }, 400);
+      }
+
+      // Konversi File Buffer ke Base64 menggunakan runtime Bun/Node
+      const bytes = await file.arrayBuffer();
+      base64Data = Buffer.from(bytes).toString('base64');
+      mimeType = file.type || 'image/jpeg';
+      
+      logger.info('📸 OCR processing via multipart upload:', file.name, 'Mime:', mimeType);
+    } else {
+      // Deteksi jika input dikirim via JSON Base64
+      const body = await c.req.json();
+      const validated = ocrSchema.parse(body);
+      
+      base64Data = validated.image.replace(/^data:image\/[a-z]+;base64,/, '');
+      mimeType = validated.mimeType;
+      
+      logger.info('📸 OCR processing via JSON base64 payload');
+    }
+
+    if (!base64Data) {
+      return c.json({ error: 'Validasi gagal', message: 'Data gambar dokumen kosong' }, 400);
+    }
+
+    const result = await extractTextFromImage(base64Data, mimeType);
+
+    // Kembalikan objek 'text' dan 'content' agar kompatibel dengan tipe frontend & backend
+    return c.json({
+      text: result,
+      content: result,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      logger.warn('⚠️ Validation error:', error.issues);
+      return c.json({ 
+        error: 'Validasi gagal', 
+        details: error.issues.map(e => e.message) 
+      }, 400);
+    }
+    
+    logger.error('❌ OCR controller error:', error);
+    return c.json({ 
+      error: 'Gagal menganalisis dokumen gambar',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Validate Claim Controller - Verifikasi klaim dengan web search grounding & pemetaan key frontend
+ * POST /api/chat/validate
+ */
+export const validateClaimController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = validateSchema.parse(body);
+    
+    logger.info('🔍 Claim validation request:', {
+      claim: validated.claim.substring(0, 100) + '...',
+      hasImage: !!validated.image
+    });
+
+    const result = await validateClaim(validated.claim, validated.image, validated.mimeType);
+    
+    // Simpan hasil verifikasi klaim ke Supabase
+    try {
+      const cleanClaim = validated.claim.trim();
+      const { data: existingClaims } = await supabase
+        .from('claim_verifications')
+        .select('id, search_count')
+        .ilike('claim_text', cleanClaim)
+        .limit(1);
+
+      if (existingClaims && existingClaims.length > 0) {
+        const existing = existingClaims[0];
+        await supabase
+          .from('claim_verifications')
+          .update({
+            search_count: existing.search_count + 1,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id);
+        logger.info('📈 Incremented search count for claim:', existing.id);
+      } else {
+        await supabase
+          .from('claim_verifications')
+          .insert({
+            claim_text: cleanClaim,
+            is_credible: result.isCredible,
+            confidence_score: result.confidence || (result.isCredible ? 90.00 : 20.00),
+            reasoning: result.reasoning,
+            sources: result.sources || [],
+            category: 'Umum',
+            search_count: 1
+          });
+        logger.info('💾 Saved new claim verification to DB');
+      }
+    } catch (dbErr) {
+      logger.error('⚠️ Failed to save claim verification to DB:', dbErr);
+    }
+
+    // Petakan output untuk mendukung key frontend (isValid, explanation, source, confidence)
+    return c.json({
+      isCredible: result.isCredible,
+      isValid: result.isCredible,                    // Map isCredible -> isValid
+      reasoning: result.reasoning,
+      explanation: result.reasoning,                // Map reasoning -> explanation
+      sources: result.sources || [],
+      source: result.sources && result.sources.length > 0 ? result.sources[0] : 'Situs Resmi Cek Fakta', // Map first source url -> source
+      confidence: result.confidence || (result.isCredible ? 90 : 20),
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return c.json({ 
+        error: 'Validasi gagal', 
+        details: error.issues.map(e => e.message) 
+      }, 400);
+    }
+    
+    logger.error('❌ Validate claim error:', error);
+    return c.json({ 
+      error: 'Gagal memverifikasi klaim',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Summarize Controller - Meringkas dokumen panjang menjadi poin & Mermaid diagram
+ * POST /api/chat/summarize
+ */
+export const summarizeController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = summarizeSchema.parse(body);
+    
+    logger.info('📄 Summarize request:', {
+      textLength: validated.text.length
+    });
+
+    const cleanText = validated.text.trim();
+    const originalHash = crypto.createHash('sha256').update(cleanText).digest('hex');
+
+    // Cek cache ringkasan dokumen di database
+    try {
+      const { data: existingSummary } = await supabase
+        .from('document_summaries')
+        .select('summary')
+        .eq('original_hash', originalHash)
+        .maybeSingle();
+
+      if (existingSummary) {
+        logger.info('⚡ Retrieved summary from DB cache (hash hit)');
+        return c.json({
+          summary: existingSummary.summary,
+          timestamp: new Date().toISOString(),
+        });
+      }
+    } catch (dbErr) {
+      logger.error('⚠️ Failed to check document summaries cache:', dbErr);
+    }
+
+    const summary = await summarizeDocument(validated.text);
+    
+    // Simpan hasil ringkasan dokumen ke database Supabase
+    try {
+      const keyPoints = summary
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => /^\d+\.\s+/.test(line))
+        .map(line => line.replace(/^\d+\.\s+/, ''));
+
+      await supabase
+        .from('document_summaries')
+        .insert({
+          original_hash: originalHash,
+          original_text: cleanText,
+          summary: summary,
+          key_points: keyPoints,
+        });
+      logger.info('💾 Saved new document summary to DB cache');
+    } catch (dbErr) {
+      logger.error('⚠️ Failed to save document summary to DB:', dbErr);
+    }
+
+    return c.json({
+      summary,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return c.json({ 
+        error: 'Validasi gagal', 
+        details: error.issues.map(e => e.message) 
+      }, 400);
+    }
+    
+    logger.error('❌ Summarize error:', error);
+    return c.json({ 
+      error: 'Gagal meringkas dokumen',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Get All Reports Controller - Mengambil semua laporan aduan warga (Admin)
+ * GET /api/reports
+ */
+export const getReportsController = async (c: Context) => {
+  try {
+    const status = c.req.query('status');
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = (page - 1) * limit;
+
+    logger.info('📋 Admin: Get all reports request', { status, page, limit });
+
+    let query = supabase
+      .from('citizen_reports')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (status && status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    const { data, error, count } = await query;
+
+    if (error) throw error;
+
+    return c.json({
+      reports: data || [],
+      total: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit),
+    });
+  } catch (error: any) {
+    logger.error('❌ Get reports error:', error);
+    return c.json({
+      error: 'Gagal mengambil data laporan',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Update Report Status Controller - Mengubah status laporan aduan (Admin)
+ * PATCH /api/reports/:id
+ */
+export const updateReportStatusController = async (c: Context) => {
+  try {
+    const id = c.req.param('id');
+    const body = await c.req.json();
+    const { status, adminNote } = body;
+
+    const validStatuses = ['Menunggu', 'Diproses', 'Selesai', 'Ditolak'];
+    if (!status || !validStatuses.includes(status)) {
+      return c.json({ error: 'Status tidak valid. Gunakan: Menunggu, Diproses, Selesai, atau Ditolak' }, 400);
+    }
+
+    logger.info('📝 Admin: Update report status', { id, status });
+
+    const updateData: any = {
+      status,
+      updated_at: new Date().toISOString(),
+    };
+    if (adminNote !== undefined) {
+      updateData.admin_note = adminNote;
+    }
+
+    const { data, error } = await supabase
+      .from('citizen_reports')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    logger.info('✅ Report status updated:', id, '->', status);
+    return c.json({ report: data, message: `Status laporan berhasil diubah ke "${status}"` });
+  } catch (error: any) {
+    logger.error('❌ Update report status error:', error);
+    return c.json({
+      error: 'Gagal mengubah status laporan',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Get Dashboard Stats Controller - Statistik ringkas untuk admin dashboard
+ * GET /api/admin/stats
+ */
+export const getDashboardStatsController = async (c: Context) => {
+  try {
+    logger.info('📊 Admin: Get dashboard stats');
+
+    const [reportsResult, chatHistoryResult] = await Promise.all([
+      supabase.from('citizen_reports').select('status', { count: 'exact' }),
+      supabase.from('chat_history').select('session_id', { count: 'exact' }),
+    ]);
+
+    const reports = reportsResult.data || [];
+    const totalReports = reportsResult.count || 0;
+    const totalSessions = chatHistoryResult.count || 0;
+
+    const statusCounts = reports.reduce((acc: any, r: any) => {
+      acc[r.status] = (acc[r.status] || 0) + 1;
+      return acc;
+    }, {});
+
+    return c.json({
+      totalReports,
+      totalSessions,
+      statusCounts: {
+        Menunggu: statusCounts['Menunggu'] || 0,
+        Diproses: statusCounts['Diproses'] || 0,
+        Selesai: statusCounts['Selesai'] || 0,
+        Ditolak: statusCounts['Ditolak'] || 0,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    logger.error('❌ Get dashboard stats error:', error);
+    return c.json({
+      error: 'Gagal mengambil statistik',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Create Report Controller - Membuat aduan darurat warga dan menyimpan ke Supabase
+ * POST /api/reports
+ */
+export const createReportController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = reportSchema.parse(body);
+
+    logger.info('📋 Citizen report request received:', {
+      reporterName: validated.reporterName,
+      category: validated.category,
+      hasGPS: validated.latitude !== undefined && validated.longitude !== undefined,
+    });
+
+    // Pastikan session_id ada di tabel chat_history terlebih dahulu untuk menghindari error foreign key (23503)
+    if (validated.sessionId) {
+      const history = await getChatHistory(validated.sessionId);
+      if (!history) {
+        logger.info('🆕 Session ID not found in chat_history. Initializing empty history for:', validated.sessionId);
+        await saveChatHistory(validated.sessionId, []);
+      }
+    }
+
+    // Simpan aduan warga ke database Supabase (tabel citizen_reports)
+    const { data, error } = await supabase
+      .from('citizen_reports')
+      .insert({
+        reporter_name: validated.reporterName,
+        reporter_contact: validated.reporterContact,
+        category: validated.category,
+        description: validated.description,
+        session_id: validated.sessionId || null,
+        status: 'Menunggu', // Status awal laporan
+        latitude: validated.latitude,
+        longitude: validated.longitude,
+        image_url: validated.image || null,
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    logger.info('✅ Citizen report created successfully, ID:', data.id);
+
+    return c.json({
+      id: data.id,
+      status: 'Menunggu',
+      message: 'Laporan Anda berhasil disimpan dalam database KOMUNITAS. Petugas akan segera memproses laporan Anda.',
+    }, 201);
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      logger.warn('⚠️ Validation error in report:', error.issues);
+      return c.json({ 
+        error: 'Validasi gagal', 
+        details: error.issues.map(e => e.message) 
+      }, 400);
+    }
+    
+    logger.error('❌ Create report controller error:', error);
+    return c.json({ 
+      error: 'Gagal membuat laporan aduan',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Get History Controller - Mengambil riwayat chat (Dipetakan agar mendukung key 'messages')
+ * GET /api/chat/history/:sessionId
+ */
+export const getHistoryController = async (c: Context) => {
+  try {
+    const sessionId = c.req.param('sessionId');
+    
+    if (!sessionId) {
+      return c.json({ error: 'Session ID diperlukan' }, 400);
+    }
+
+    logger.info('📜 Get history request:', { sessionId });
+
+    const history = await getChatHistory(sessionId) || [];
+    
+    // Tambahkan key 'messages' agar kompatibel dengan HistoryResponse tipe frontend
+    return c.json({
+      history: history,
+      messages: history,
+      sessionId,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error: any) {
+    logger.error('❌ Get history error:', error);
+    return c.json({ 
+      error: 'Gagal mengambil riwayat',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Delete History Controller - Menghapus riwayat chat
+ * DELETE /api/chat/history/:sessionId
+ */
+export const deleteHistoryController = async (c: Context) => {
+  try {
+    const sessionId = c.req.param('sessionId');
+    
+    if (!sessionId) {
+      return c.json({ error: 'Session ID diperlukan' }, 400);
+    }
+
+    logger.info('🗑️ Delete history request:', { sessionId });
+
+    await deleteChatHistory(sessionId);
+    
+    return c.json({
+      success: true,
+      sessionId,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error: any) {
+    logger.error('❌ Delete history error:', error);
+    return c.json({ 
+      error: 'Gagal menghapus riwayat',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+// --- Services (RAG Directory) Management ---
+
+/**
+ * Schema validasi untuk data layanan publik baru (Zod)
+ */
+const serviceSchema = z.object({
+  name: z.string().min(1, 'Nama layanan tidak boleh kosong'),
+  institution: z.string().min(1, 'Nama lembaga tidak boleh kosong'),
+  category: z.string().min(1, 'Kategori tidak boleh kosong'),
+  description: z.string().min(1, 'Deskripsi tidak boleh kosong'),
+  requirements: z.array(z.string()).default([]),
+  procedures: z.array(z.string()).default([]),
+  contactPhone: z.string().optional(),
+  contactEmail: z.string().optional(),
+  address: z.string().optional(),
+  website: z.string().optional(),
+});
+
+/**
+ * Create Service Controller - Menambahkan layanan publik baru & generate embedding secara aman (Admin)
+ * POST /api/services
+ */
+export const createServiceController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = serviceSchema.parse(body);
+
+    logger.info('📂 Admin: Create service request received:', {
+      name: validated.name,
+      institution: validated.institution,
+    });
+
+    // 1. Gabungkan informasi layanan menjadi satu teks untuk representasi semantik (RAG)
+    const embeddingText = `Layanan: ${validated.name}
+Lembaga: ${validated.institution}
+Kategori: ${validated.category}
+Deskripsi: ${validated.description}
+Persyaratan: ${validated.requirements.join(', ')}
+Prosedur: ${validated.procedures.join(' -> ')}`;
+
+    // 2. Generate embedding secara aman di server menggunakan OpenRouter
+    const vector = await getEmbedding(embeddingText);
+
+    // 3. Simpan data layanan beserta embeddingnya ke Supabase
+    const { data, error } = await supabase
+      .from('public_services')
+      .insert({
+        name: validated.name,
+        institution: validated.institution,
+        category: validated.category,
+        description: validated.description,
+        requirements: validated.requirements,
+        procedures: validated.procedures,
+        contact_phone: validated.contactPhone || null,
+        contact_email: validated.contactEmail || null,
+        address: validated.address || null,
+        website: validated.website || null,
+        embedding: vector,
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    logger.info('✅ Public service created successfully with embedding vector. ID:', data.id);
+
+    return c.json({
+      id: data.id,
+      message: 'Layanan publik berhasil ditambahkan beserta data representasi vektor (RAG).',
+    }, 201);
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      logger.warn('⚠️ Validation error in service data:', error.issues);
+      return c.json({ 
+        error: 'Validasi gagal', 
+        details: error.issues.map(e => e.message) 
+      }, 400);
+    }
+    
+    logger.error('❌ Create service error:', error);
+    return c.json({ 
+      error: 'Gagal menambahkan layanan publik',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Get All Services Controller - Mengambil daftar semua layanan publik
+ * GET /api/services
+ */
+export const getServicesController = async (c: Context) => {
+  try {
+    const category = c.req.query('category');
+    logger.info('📂 Get all public services request', { category });
+
+    let query = supabase
+      .from('public_services')
+      .select('id, name, institution, category, description, requirements, procedures, contact_phone, contact_email, address, website, created_at')
+      .order('name', { ascending: true });
+
+    if (category) {
+      query = query.eq('category', category);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw error;
+    }
+
+    // Map database snake_case keys back to camelCase for the frontend client
+    const services = (data || []).map((s: any) => ({
+      id: s.id,
+      name: s.name,
+      institution: s.institution,
+      category: s.category,
+      description: s.description,
+      requirements: s.requirements || [],
+      procedures: s.procedures || [],
+      contactPhone: s.contact_phone,
+      contactEmail: s.contact_email,
+      address: s.address,
+      website: s.website,
+      createdAt: s.created_at,
+    }));
+
+    return c.json({ services });
+
+  } catch (error: any) {
+    logger.error('❌ Get services error:', error);
+    return c.json({ 
+      error: 'Gagal mengambil daftar layanan publik',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Delete Service Controller - Menghapus layanan publik (Admin)
+ * DELETE /api/services/:id
+ */
+export const deleteServiceController = async (c: Context) => {
+  try {
+    const id = c.req.param('id');
+    logger.info('🗑️ Admin: Delete public service request for ID:', id);
+
+    const { error } = await supabase
+      .from('public_services')
+      .delete()
+      .eq('id', id);
+
+    if (error) {
+      throw error;
+    }
+
+    logger.info('✅ Public service deleted successfully. ID:', id);
+
+    return c.json({
+      success: true,
+      message: 'Layanan publik berhasil dihapus.',
+    });
+
+  } catch (error: any) {
+    logger.error('❌ Delete service error:', error);
+    return c.json({ 
+      error: 'Gagal menghapus layanan publik',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
+/**
+ * Get All Claims Controller - Mengambil data verifikasi klaim hoaks (Admin)
+ * GET /api/claims
+ */
+export const getClaimsController = async (c: Context) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = (page - 1) * limit;
+
+    logger.info('📋 Admin: Get all claims request', { page, limit });
+
+    const { data, error, count } = await supabase
+      .from('claim_verifications')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    return c.json({
+      claims: data || [],
+      total: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit),
+    });
+  } catch (error: any) {
+    logger.error('❌ Get claims error:', error);
+    return c.json({ error: 'Gagal mengambil data verifikasi klaim', message: error.message || 'Unknown error' }, 500);
+  }
+};
+
+/**
+ * Delete Claim Controller - Menghapus verifikasi klaim hoaks (Admin)
+ * DELETE /api/claims/:id
+ */
+export const deleteClaimController = async (c: Context) => {
+  try {
+    const id = c.req.param('id');
+    logger.info('🗑️ Admin: Delete claim request for ID:', id);
+
+    const { error } = await supabase
+      .from('claim_verifications')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    return c.json({ success: true, message: 'Data verifikasi klaim berhasil dihapus.' });
+  } catch (error: any) {
+    logger.error('❌ Delete claim error:', error);
+    return c.json({ error: 'Gagal menghapus data verifikasi klaim', message: error.message || 'Unknown error' }, 500);
+  }
+};
+
+/**
+ * Get All Summaries Controller - Mengambil data ringkasan dokumen (Admin)
+ * GET /api/summaries
+ */
+export const getSummariesController = async (c: Context) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = (page - 1) * limit;
+
+    logger.info('📋 Admin: Get all summaries request', { page, limit });
+
+    const { data, error, count } = await supabase
+      .from('document_summaries')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    return c.json({
+      summaries: data || [],
+      total: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit),
+    });
+  } catch (error: any) {
+    logger.error('❌ Get summaries error:', error);
+    return c.json({ error: 'Gagal mengambil data ringkasan dokumen', message: error.message || 'Unknown error' }, 500);
+  }
+};
+
+/**
+ * Delete Summary Controller - Menghapus ringkasan dokumen (Admin)
+ * DELETE /api/summaries/:id
+ */
+export const deleteSummaryController = async (c: Context) => {
+  try {
+    const id = c.req.param('id');
+    logger.info('🗑️ Admin: Delete summary request for ID:', id);
+
+    const { error } = await supabase
+      .from('document_summaries')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    return c.json({ success: true, message: 'Data ringkasan dokumen berhasil dihapus.' });
+  } catch (error: any) {
+    logger.error('❌ Delete summary error:', error);
+    return c.json({ error: 'Gagal menghapus data ringkasan dokumen', message: error.message || 'Unknown error' }, 500);
+  }
+};
+
+/**
+ * Get All Chat Histories Controller - Mengambil semua sesi chat obrolan warga (Admin)
+ * GET /api/histories
+ */
+export const getChatHistoriesController = async (c: Context) => {
+  try {
+    const page = parseInt(c.req.query('page') || '1');
+    const limit = parseInt(c.req.query('limit') || '20');
+    const offset = (page - 1) * limit;
+
+    logger.info('📋 Admin: Get all chat histories request', { page, limit });
+
+    const { data, error, count } = await supabase
+      .from('chat_history')
+      .select('*', { count: 'exact' })
+      .order('updated_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw error;
+
+    return c.json({
+      histories: data || [],
+      total: count || 0,
+      page,
+      limit,
+      totalPages: Math.ceil((count || 0) / limit),
+    });
+  } catch (error: any) {
+    logger.error('❌ Get chat histories error:', error);
+    return c.json({ error: 'Gagal mengambil riwayat chat', message: error.message || 'Unknown error' }, 500);
+  }
+};
+
+/**
+ * Extract File Controller - Mengekstrak teks dari dokumen berkas (PDF, DOCX, XLSX, TXT, MD)
+ * POST /api/chat/extract-file
+ */
+export const extractFileController = async (c: Context) => {
+  try {
+    const contentType = c.req.header('content-type') || '';
+    if (!contentType.includes('multipart/form-data')) {
+      return c.json({ error: 'Validasi gagal', message: 'Content-Type harus multipart/form-data' }, 400);
+    }
+
+    const body = await c.req.parseBody();
+    const file = body['file'];
+
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: 'Validasi gagal', message: 'File tidak ditemukan atau tidak valid' }, 400);
+    }
+
+    logger.info(`📁 Extracting text from uploaded file: ${file.name} (${file.size} bytes, type: ${file.type})`);
+    
+    // Batasan ukuran berkas: 10MB
+    const MAX_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      return c.json({ error: 'Validasi gagal', message: 'Ukuran file maksimal adalah 10MB' }, 400);
+    }
+
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    const extractedText = await extractTextFromFile(buffer, file.type, file.name);
+
+    return c.json({
+      text: extractedText,
+      name: file.name,
+      size: file.size,
+      type: file.type,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error: any) {
+    logger.error('❌ File extraction controller error:', error);
+    return c.json({
+      error: 'Gagal mengekstrak teks berkas',
+      message: error.message || 'Unknown error'
+    }, 500);
+  }
+};
+
