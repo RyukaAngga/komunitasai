@@ -3,16 +3,22 @@ import { AlertTriangle, MapPin, X, Loader2, CheckCircle2, Camera, Image } from '
 import { Button } from '@/components/ui/button'
 import { chatService } from '@/services/api'
 import { useChatStore } from '@/store/chatStore'
+import { useAuthStore } from '@/store/authStore'
 
 interface CitizenReportModalProps {
   isOpen: boolean
   onClose: () => void
+  onSuccess?: (reportId: string) => void
 }
 
-export function CitizenReportModal({ isOpen, onClose }: CitizenReportModalProps) {
+export function CitizenReportModal({ isOpen, onClose, onSuccess }: CitizenReportModalProps) {
   const { currentSessionId } = useChatStore()
+  const { user, isAuthenticated } = useAuthStore()
   const [name, setName] = useState('')
   const [contact, setContact] = useState('')
+  const [province, setProvince] = useState('')
+  const [city, setCity] = useState('')
+  const [district, setDistrict] = useState('')
   const [category, setCategory] = useState('Sosial')
   const [customCategory, setCustomCategory] = useState('')
   const [description, setDescription] = useState('')
@@ -31,6 +37,14 @@ export function CitizenReportModal({ isOpen, onClose }: CitizenReportModalProps)
   const [loading, setLoading] = useState(false)
   const [reportResult, setReportResult] = useState<any>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+  // Prefill profile if authenticated
+  useEffect(() => {
+    if (isOpen && isAuthenticated && user) {
+      setName(user.nama_lengkap || '')
+      setContact(user.nomor_telepon || '')
+    }
+  }, [isOpen, isAuthenticated, user])
 
   // Auto fetch location on open
   useEffect(() => {
@@ -67,6 +81,30 @@ export function CitizenReportModal({ isOpen, onClose }: CitizenReportModalProps)
         }
         setGpsCoords(coords)
         setGpsLoading(false)
+
+        // Asynchronously fetch reverse geocoding address from OSM Nominatim
+        fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coords.lat}&lon=${coords.lng}&zoom=18&addressdetails=1`, {
+          headers: {
+            'Accept-Language': 'id-ID,id;q=0.9',
+            'User-Agent': 'KOMUNITAS-Citizen-App'
+          }
+        })
+          .then(res => res.json())
+          .then(data => {
+            if (data && data.address) {
+              const addr = data.address
+              const prov = addr.state || addr.region || ''
+              const kab = addr.city || addr.regency || addr.municipality || addr.county || ''
+              const kec = addr.subdistrict || addr.suburb || addr.village || addr.neighbourhood || ''
+              
+              if (prov) setProvince(prov.replace(/Provinsi\s+/i, ''))
+              if (kab) setCity(kab.replace(/Kabupaten\s+/i, '').replace(/Kota\s+/i, ''))
+              if (kec) setDistrict(kec)
+            }
+          })
+          .catch(err => {
+            console.warn('Auto-geocoding address lookup failed:', err)
+          })
       },
       (error) => {
         console.error('Gagal mendapatkan lokasi GPS:', error)
@@ -185,6 +223,9 @@ export function CitizenReportModal({ isOpen, onClose }: CitizenReportModalProps)
       }
       const response = await chatService.createReport(data)
       setReportResult(response)
+      if (onSuccess && response.id) {
+        onSuccess(response.id)
+      }
     } catch (error: any) {
       console.error('Error submitting citizen report:', error)
       const msg = error?.message || 'Terjadi kesalahan tidak dikenal.'
@@ -205,6 +246,9 @@ export function CitizenReportModal({ isOpen, onClose }: CitizenReportModalProps)
     setCustomCategory('')
     setDescription('')
     setGpsCoords(null)
+    setProvince('')
+    setCity('')
+    setDistrict('')
     setImagePreview(null)
     setImageBase64(null)
     setReportResult(null)
@@ -273,7 +317,8 @@ export function CitizenReportModal({ isOpen, onClose }: CitizenReportModalProps)
                     value={name}
                     onChange={handleNameChange}
                     placeholder="Contoh: Budi Santoso"
-                    className="w-full h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-700 focus:border-zinc-700 placeholder:text-zinc-600 transition"
+                    disabled={isAuthenticated}
+                    className="w-full h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-700 focus:border-zinc-700 placeholder:text-zinc-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 </div>
                 <div className="space-y-1.5">
@@ -283,7 +328,48 @@ export function CitizenReportModal({ isOpen, onClose }: CitizenReportModalProps)
                     value={contact}
                     onChange={handleContactChange}
                     placeholder="Contoh: 081234567890"
-                    className="w-full h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-700 focus:border-zinc-700 placeholder:text-zinc-600 transition"
+                    disabled={isAuthenticated}
+                    className="w-full h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-700 focus:border-zinc-700 placeholder:text-zinc-600 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+                            {/* Regional Selectors styled in dark zinc glassmorphism */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="space-y-1.5">
+                  <label htmlFor="province" className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Provinsi</label>
+                  <input
+                    id="province"
+                    type="text"
+                    value={province}
+                    onChange={(e) => setProvince(e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
+                    placeholder="Contoh: Jawa Barat"
+                    required
+                    className="w-full h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-700 focus:border-zinc-700 placeholder:text-zinc-650 transition"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="city" className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Kabupaten / Kota</label>
+                  <input
+                    id="city"
+                    type="text"
+                    value={city}
+                    onChange={(e) => setCity(e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
+                    placeholder="Contoh: Bandung"
+                    required
+                    className="w-full h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-700 focus:border-zinc-700 placeholder:text-zinc-650 transition"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label htmlFor="district" className="text-[10px] font-semibold text-zinc-500 uppercase tracking-wider block">Kecamatan / Desa</label>
+                  <input
+                    id="district"
+                    type="text"
+                    value={district}
+                    onChange={(e) => setDistrict(e.target.value.replace(/[^a-zA-Z\s]/g, ''))}
+                    placeholder="Contoh: Coblong"
+                    required
+                    className="w-full h-10 rounded-md border border-zinc-800 bg-zinc-950 px-3 text-xs text-zinc-200 focus:outline-none focus:ring-1 focus:ring-zinc-700 focus:border-zinc-700 placeholder:text-zinc-650 transition"
                   />
                 </div>
               </div>

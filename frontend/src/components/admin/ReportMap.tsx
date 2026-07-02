@@ -11,6 +11,7 @@ export function ReportMap({ reports, onSelectReport }: ReportMapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markersRef = useRef<any[]>([]);
+  const clusterGroupRef = useRef<any>(null);
   const [loading, setLoading] = useState(true);
   const [hasValidCoordinates, setHasValidCoordinates] = useState(false);
 
@@ -32,7 +33,7 @@ export function ReportMap({ reports, onSelectReport }: ReportMapProps) {
 
     const loadLeaflet = () => {
       return new Promise<any>((resolve, reject) => {
-        if ((window as any).L) {
+        if ((window as any).L && (window as any).L.markerClusterGroup) {
           resolve((window as any).L);
           return;
         }
@@ -46,15 +47,37 @@ export function ReportMap({ reports, onSelectReport }: ReportMapProps) {
           document.head.appendChild(link);
         }
 
+        // Add Leaflet MarkerCluster CSS
+        if (!document.getElementById('leaflet-cluster-css')) {
+          const link = document.createElement('link');
+          link.id = 'leaflet-cluster-css';
+          link.rel = 'stylesheet';
+          link.href = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.css';
+          document.head.appendChild(link);
+          
+          const linkDefault = document.createElement('link');
+          linkDefault.id = 'leaflet-cluster-default-css';
+          linkDefault.rel = 'stylesheet';
+          linkDefault.href = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/MarkerCluster.Default.css';
+          document.head.appendChild(linkDefault);
+        }
+
         // Add Leaflet JS
         const script = document.createElement('script');
         script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
         script.onload = () => {
-          if ((window as any).L) {
-            resolve((window as any).L);
-          } else {
-            reject(new Error('Leaflet global object not found'));
-          }
+          // Once Leaflet JS is loaded, load MarkerCluster JS
+          const clusterScript = document.createElement('script');
+          clusterScript.src = 'https://unpkg.com/leaflet.markercluster@1.4.1/dist/leaflet.markercluster.js';
+          clusterScript.onload = () => {
+            if ((window as any).L && (window as any).L.markerClusterGroup) {
+              resolve((window as any).L);
+            } else {
+              reject(new Error('Leaflet MarkerCluster plugin not found'));
+            }
+          };
+          clusterScript.onerror = () => reject(new Error('Failed to load Leaflet MarkerCluster script'));
+          document.body.appendChild(clusterScript);
         };
         script.onerror = () => reject(new Error('Failed to load Leaflet script'));
         document.body.appendChild(script);
@@ -91,6 +114,7 @@ export function ReportMap({ reports, onSelectReport }: ReportMapProps) {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
+        clusterGroupRef.current = null;
       }
     };
   }, []);
@@ -101,9 +125,57 @@ export function ReportMap({ reports, onSelectReport }: ReportMapProps) {
     const L = (window as any).L;
     if (!map || !L) return;
 
-    // Clear old markers
-    markersRef.current.forEach(m => m.remove());
+    // Clear old markers from array
     markersRef.current = [];
+
+    // Initialize or clear MarkerCluster Group
+    if (!clusterGroupRef.current) {
+      clusterGroupRef.current = L.markerClusterGroup({
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true,
+        maxClusterRadius: 40,
+        iconCreateFunction: (cluster: any) => {
+          const childCount = cluster.getChildCount();
+          let border = '#f59e0b'; // amber
+          let shadow = 'rgba(245, 158, 11, 0.4)';
+          
+          if (childCount < 5) {
+            border = '#3b82f6'; // blue
+            shadow = 'rgba(59, 130, 246, 0.4)';
+          } else if (childCount < 15) {
+            border = '#f59e0b'; // amber
+            shadow = 'rgba(245, 158, 11, 0.4)';
+          } else {
+            border = '#ef4444'; // red
+            shadow = 'rgba(239, 68, 68, 0.4)';
+          }
+          
+          return L.divIcon({
+            html: `<div style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 32px;
+              height: 32px;
+              border-radius: 50%;
+              background-color: #18181b;
+              border: 2px solid ${border};
+              box-shadow: 0 0 10px ${shadow};
+              color: #f4f4f5;
+              font-family: system-ui, sans-serif;
+              font-size: 11px;
+              font-weight: bold;
+            ">
+              <span>${childCount}</span>
+            </div>`,
+            className: 'custom-marker-cluster',
+            iconSize: L.point(32, 32)
+          });
+        }
+      }).addTo(map);
+    } else {
+      clusterGroupRef.current.clearLayers();
+    }
 
     const bounds: any[] = [];
 
@@ -157,13 +229,13 @@ export function ReportMap({ reports, onSelectReport }: ReportMapProps) {
           iconAnchor: [7, 7]
         });
 
-        const marker = L.marker([lat, lng], { icon: customIcon }).addTo(map);
+        const marker = L.marker([lat, lng], { icon: customIcon });
         
         // Popup styling
         const cleanDescription = report.description.replace(/^\[📍 LOKASI GPS KOORDINAT:[^\]]+\]\s*/, '');
         marker.bindPopup(`
           <div style="font-family: system-ui, -apple-system, sans-serif; font-size: 11px; color: #f4f4f5; background-color: #18181b; padding: 6px; border-radius: 6px; width: 180px;">
-            <div style="font-weight: 600; font-size: 12px; margin-bottom: 3px; border-b: 1px solid #27272a; padding-bottom: 2px;">
+            <div style="font-weight: 600; font-size: 12px; margin-bottom: 3px; border-bottom: 1px solid #27272a; padding-bottom: 2px;">
               ${report.reporter_name}
             </div>
             ${report.image_url ? `
@@ -192,6 +264,8 @@ export function ReportMap({ reports, onSelectReport }: ReportMapProps) {
           });
         }
 
+        // Add to cluster group
+        clusterGroupRef.current.addLayer(marker);
         markersRef.current.push(marker);
       }
     });

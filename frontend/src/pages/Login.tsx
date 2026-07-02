@@ -1,23 +1,38 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Eye, EyeOff, Loader2, AlertCircle, Lock, Mail } from 'lucide-react'
-import { authService } from '@/services/auth'
+import { useAuthStore } from '@/store/authStore'
+import { useChatStore } from '@/store/chatStore'
+import { useToast } from '@/components/ui/toast'
 
-export function AdminLogin() {
+export function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPass, setShowPass] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const navigate = useNavigate()
 
-  // Jika sudah login, redirect langsung ke dashboard
+  const { login, isAuthenticated, user, clearError } = useAuthStore()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { toast } = useToast()
+
+  const from = (location.state as any)?.from?.pathname || '/'
+
+  // Redirect if already authenticated
   useEffect(() => {
-    authService.getSession().then(session => {
-      if (session) navigate('/admin', { replace: true })
-    })
-  }, [navigate])
+    if (isAuthenticated && user) {
+      if (['admin', 'superadmin', 'petugas'].includes(user.role)) {
+        navigate('/admin', { replace: true })
+      } else {
+        navigate(from, { replace: true })
+      }
+    }
+    return () => {
+      clearError()
+    }
+  }, [isAuthenticated, user, navigate, from, clearError])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,10 +45,24 @@ export function AdminLogin() {
 
     setLoading(true)
     try {
-      await authService.login(email.trim(), password)
-      navigate('/admin', { replace: true })
+      const loggedInUser = await login(email.trim(), password)
+      
+      // Reset guest chat store and remove guest contact data upon successful login
+      useChatStore.getState().clearAllSessions()
+      localStorage.removeItem('komunitas_guest_contact')
+      
+      toast({
+        title: "Masuk Berhasil",
+        description: `Selamat datang kembali, ${loggedInUser.nama_panggilan || loggedInUser.nama_lengkap}!`,
+        type: "success",
+      })
+
+      if (['admin', 'superadmin', 'petugas'].includes(loggedInUser.role)) {
+        navigate('/admin', { replace: true })
+      } else {
+        navigate(from, { replace: true })
+      }
     } catch (err: any) {
-      // Translate common Supabase error messages to Indonesian
       const msg = err.message || ''
       if (msg.includes('Invalid login credentials')) {
         setError('Email atau password salah. Periksa kembali kredensial Anda.')
@@ -49,8 +78,11 @@ export function AdminLogin() {
     }
   }
 
+  // Check if staff email for dynamic rendering
+  const isStaffEmail = email.trim().toLowerCase().endsWith('@komunitas.id')
+
   return (
-    <div className="relative flex min-h-[100dvh] bg-zinc-950 overflow-hidden text-zinc-100">
+    <div className="relative flex min-h-[100dvh] bg-zinc-950 overflow-hidden text-zinc-100 font-sans">
       
       {/* ─── LEFT PANEL: BRAND & INTEGRITY STATS (DESKTOP ONLY) ────────── */}
       <div className="hidden md:flex md:w-1/2 flex-col justify-between p-12 bg-zinc-950 border-r border-zinc-900 relative bg-dot-pattern bg-noise overflow-hidden">
@@ -64,7 +96,7 @@ export function AdminLogin() {
           </div>
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-zinc-100">KOMUNITAS</span>
-            <span className="block text-[9px] font-semibold uppercase tracking-wider text-zinc-500 leading-none mt-0.5">Admin Portal</span>
+            <span className="block text-[9px] font-semibold uppercase tracking-wider text-zinc-500 leading-none mt-0.5">Portal Utama</span>
           </div>
         </div>
 
@@ -76,7 +108,7 @@ export function AdminLogin() {
             <p className="text-xs text-zinc-500 font-mono mt-1">Console v1.0.4 // SSL Enforced</p>
           </div>
           <p className="text-zinc-400 text-xs leading-relaxed font-light">
-            Selamat datang di Portal Administrasi KOMUNITAS. Sistem ini dirancang untuk memproses aduan warga, memperbarui informasi layanan masyarakat, serta memantau operasional pelayanan publik secara real-time. Hak akses dibatasi bagi pengguna terdaftar.
+            Selamat datang di Portal Utama KOMUNITAS. Sistem ini dirancang untuk memproses aduan warga, memperbarui informasi layanan masyarakat, mengakses asisten AI, serta memantau operasional pelayanan publik secara real-time. Hak akses dibatasi bagi pengguna terdaftar.
           </p>
           
           <div className="pt-6 space-y-2 border-t border-zinc-900">
@@ -112,8 +144,8 @@ export function AdminLogin() {
             <img src="/assets/logo/komunitas.png" alt="KOMUNITAS Logo" className="h-full w-full object-contain" />
           </div>
           <div className="text-center">
-            <h1 className="text-md font-bold text-zinc-100 uppercase tracking-wider">Admin KOMUNITAS</h1>
-            <p className="mt-0.5 text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Portal Manajemen Internal</p>
+            <h1 className="text-md font-bold text-zinc-100 uppercase tracking-wider">KOMUNITAS</h1>
+            <p className="mt-0.5 text-[10px] text-zinc-500 uppercase tracking-widest font-semibold">Portal Terpadu</p>
           </div>
         </div>
 
@@ -125,11 +157,18 @@ export function AdminLogin() {
           className="relative w-full max-w-sm"
         >
           {/* Glassmorphic Card */}
-          <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/60 backdrop-blur-xl shadow-xl">
+          <div className={`overflow-hidden rounded-xl border transition-all duration-300 bg-zinc-900/60 backdrop-blur-xl shadow-xl ${
+            isStaffEmail ? 'border-indigo-500/30' : 'border-zinc-800'
+          }`}>
             <div className="border-b border-zinc-800/80 bg-zinc-950/40 p-6">
-              <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">Masuk ke Dashboard</h2>
+              <h2 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">
+                {isStaffEmail ? 'Masuk ke Konsol Admin' : 'Masuk ke Akun'}
+              </h2>
               <p className="mt-1 text-xs text-zinc-500 font-light leading-relaxed">
-                Gunakan kredensial admin terdaftar untuk membuka kunci konsol manajemen.
+                {isStaffEmail 
+                  ? 'Gunakan kredensial admin terdaftar Anda untuk membuka kunci konsol manajemen.'
+                  : 'Gunakan kredensial akun terdaftar Anda untuk mengakses seluruh layanan.'
+                }
               </p>
             </div>
 
@@ -151,38 +190,52 @@ export function AdminLogin() {
 
               {/* Email Input */}
               <div className="space-y-2">
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
-                  Email Admin
+                <label 
+                  htmlFor="email" 
+                  className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider"
+                >
+                  {isStaffEmail ? 'Email Admin' : 'Email Pengguna'}
                 </label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-650 text-zinc-500" />
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <input
+                    id="email"
+                    name="email"
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="admin@komunitas.id"
+                    placeholder={isStaffEmail ? 'admin@komunitas.id' : 'warga@email.com'}
                     autoComplete="email"
                     disabled={loading}
-                    className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-950/50 pl-10 pr-4 text-xs text-zinc-200 placeholder-zinc-700 outline-none transition focus:border-zinc-700 focus:bg-zinc-950 disabled:opacity-50"
+                    className={`h-10 w-full rounded-lg border bg-zinc-950/50 pl-10 pr-4 text-xs text-zinc-200 placeholder-zinc-700 outline-none transition focus:bg-zinc-950 disabled:opacity-50 ${
+                      isStaffEmail ? 'border-indigo-950/50 focus:border-indigo-500/40' : 'border-zinc-800 focus:border-zinc-700'
+                    }`}
                   />
                 </div>
               </div>
 
               {/* Password Input */}
               <div className="space-y-2">
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider">
+                <label 
+                  htmlFor="password" 
+                  className="block text-[10px] font-bold text-zinc-500 uppercase tracking-wider"
+                >
                   Password
                 </label>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-650 text-zinc-500" />
+                  <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
                   <input
+                    id="password"
+                    name="password"
                     type={showPass ? 'text' : 'password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="••••••••"
                     autoComplete="current-password"
                     disabled={loading}
-                    className="h-10 w-full rounded-lg border border-zinc-800 bg-zinc-950/50 pl-10 pr-10 text-xs text-zinc-200 placeholder-zinc-700 outline-none transition focus:border-zinc-700 focus:bg-zinc-950 disabled:opacity-50"
+                    className={`h-10 w-full rounded-lg border bg-zinc-950/50 pl-10 pr-10 text-xs text-zinc-200 placeholder-zinc-700 outline-none transition focus:bg-zinc-950 disabled:opacity-50 ${
+                      isStaffEmail ? 'border-indigo-950/50 focus:border-indigo-500/40' : 'border-zinc-800 focus:border-zinc-700'
+                    }`}
                   />
                   <button
                     type="button"
@@ -199,28 +252,45 @@ export function AdminLogin() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex h-10 w-full items-center justify-center gap-2 rounded-lg bg-zinc-100 text-xs font-bold text-zinc-950 hover:bg-zinc-200 active:scale-[0.98] transition-all disabled:opacity-55"
+                className={`flex h-10 w-full items-center justify-center gap-2 rounded-lg text-xs font-bold active:scale-[0.98] transition-all disabled:opacity-55 ${
+                  isStaffEmail ? 'bg-indigo-600 text-white hover:bg-indigo-500' : 'bg-zinc-100 text-zinc-950 hover:bg-zinc-200'
+                }`}
               >
                 {loading ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin text-zinc-950" />
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     Memverifikasi...
                   </>
                 ) : (
-                  'Masuk ke Dashboard'
+                  isStaffEmail ? 'Masuk ke Konsol Admin' : 'Masuk ke Akun'
                 )}
               </button>
             </form>
+
+            {/* Registration call to action */}
+            {!isStaffEmail && (
+              <div className="border-t border-zinc-800/80 bg-zinc-950/20 px-6 py-4 text-center">
+                <p className="text-xs text-zinc-500">
+                  Belum memiliki akun warga?{' '}
+                  <Link 
+                    to="/register" 
+                    className="font-bold text-zinc-300 hover:text-zinc-100 transition-colors underline decoration-zinc-800 underline-offset-4"
+                  >
+                    Daftar Sekarang
+                  </Link>
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Footer Back Button */}
           <div className="mt-6 text-center">
-            <a 
-              href="/" 
-              className="text-xs text-zinc-550 text-zinc-400 hover:text-zinc-200 underline underline-offset-4 decoration-zinc-800 transition-colors"
+            <Link 
+              to="/" 
+              className="text-xs text-zinc-400 hover:text-zinc-200 underline underline-offset-4 decoration-zinc-800 transition-colors"
             >
               Kembali ke Beranda
-            </a>
+            </Link>
           </div>
         </motion.div>
       </div>

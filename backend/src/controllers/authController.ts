@@ -1,0 +1,489 @@
+import { Context } from 'hono';
+import { z } from 'zod';
+import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../services/supabaseService';
+import { logger } from '../utils/logger';
+
+// ─── VALIDATION SCHEMAS ──────────────────────────────────────────────────────
+
+const phoneRegex = /^\+62\d{10,13}$/;
+
+export const registerSchema = z.object({
+  email: z.string().email('Format email tidak valid'),
+  password: z.string().min(8, 'Password minimal harus 8 karakter'),
+  nik: z.string()
+    .length(16, 'NIK harus tepat 16 digit')
+    .regex(/^\d+$/, 'NIK harus berupa angka saja'),
+  nama_lengkap: z.string().min(1, 'Nama lengkap wajib diisi sesuai KTP'),
+  nama_panggilan: z.string().min(1, 'Nama panggilan wajib diisi'),
+  tanggal_lahir: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal lahir harus YYYY-MM-DD'),
+  nomor_telepon: z.string().regex(phoneRegex, 'Format nomor telepon harus diawali +62 dan diikuti 10-13 digit angka (Contoh: +6281234567890)'),
+});
+
+const loginSchema = z.object({
+  email: z.string().email('Format email tidak valid'),
+  password: z.string().min(1, 'Password wajib diisi'),
+});
+
+// ─── CONTROLLERS ─────────────────────────────────────────────────────────────
+
+/**
+ * Register Controller
+ * POST /api/auth/register
+ */
+export const registerController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = registerSchema.parse(body);
+
+    logger.info('👤 Registration request for email:', validated.email);
+
+    // 1. Cek duplikasi NIK di database profiles terlebih dahulu
+    const { data: existingNik, error: nikCheckError } = await supabase
+      .from('profiles')
+      .select('nik')
+      .eq('nik', validated.nik)
+      .maybeSingle();
+
+    if (nikCheckError) {
+      logger.error('❌ Error checking NIK duplication:', nikCheckError);
+      return c.json({ error: 'Database error', message: 'Gagal melakukan verifikasi NIK' }, 500);
+    }
+
+    if (existingNik) {
+      return c.json({ 
+        error: 'Registration failed', 
+        message: 'Nomor NIK ini sudah pernah terdaftar' 
+      }, 400);
+    }
+
+    const isKomunitasEmail = validated.email.toLowerCase().endsWith('@komunitas.id');
+    const assignedRole = isKomunitasEmail ? 'superadmin' : 'user';
+
+    // 2. Daftar ke Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: validated.email,
+      password: validated.password,
+      options: {
+        data: {
+          role: assignedRole,
+          nama_lengkap: validated.nama_lengkap,
+        }
+      }
+    });
+
+    if (authError || !authData.user) {
+      logger.error('❌ Supabase Auth registration error:', authError);
+      return c.json({ 
+        error: 'Registration failed', 
+        message: authError?.message || 'Gagal mendaftarkan akun di sistem autentikasi' 
+      }, 400);
+    }
+
+    const userId = authData.user.id;
+
+    // 3. Masukkan profil tambahan ke tabel profiles
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
+        email: validated.email,
+        nik: validated.nik,
+        nama_lengkap: validated.nama_lengkap,
+        nama_panggilan: validated.nama_panggilan,
+        tanggal_lahir: validated.tanggal_lahir,
+        nomor_telepon: validated.nomor_telepon,
+        role: assignedRole,
+      });
+
+    if (profileError) {
+      logger.error('❌ Profiles table insertion error:', profileError);
+      
+      // Cleanup: Hapus user auth jika penulisan ke profiles gagal untuk menjaga integritas data
+      // Catatan: Karena di Supabase admin API biasanya dibutuhkan untuk menghapus auth user secara langsung,
+      // kita laporkan error ini dan mintakan tindakan pemulihan.
+      return c.json({ 
+        error: 'Profile creation failed', 
+        message: 'Akun autentikasi dibuat, namun pembuatan profil gagal. ' + profileError.message 
+      }, 500);
+    }
+
+    logger.info('✅ Account & profile created successfully for:', validated.email);
+
+    return c.json({
+      success: true,
+      message: 'Registrasi berhasil! Silakan periksa email Anda jika konfirmasi email diaktifkan, atau langsung masuk.',
+      user: {
+        id: userId,
+        email: validated.email,
+        nama_lengkap: validated.nama_lengkap,
+        nama_panggilan: validated.nama_panggilan,
+        role: assignedRole
+      }
+    }, 201);
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      const firstError = error.issues[0]?.message || 'Validasi masukan gagal';
+      return c.json({ error: 'ValidationError', message: firstError }, 400);
+    }
+
+    logger.error('🔥 Registration unhandled error:', error);
+    return c.json({ error: 'InternalServerError', message: error.message || 'Terjadi kesalahan internal server' }, 500);
+  }
+};
+
+/**
+ * Login Controller
+ * POST /api/auth/login
+ */
+export const loginController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = loginSchema.parse(body);
+
+    logger.info('🔐 Login request for email:', validated.email);
+
+    // 1. Autentikasi dengan Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: validated.email,
+      password: validated.password,
+    });
+
+    if (authError || !authData.user || !authData.session) {
+      logger.warn('⚠️ Invalid login credentials for:', validated.email, authError?.message);
+      
+      let friendlyMessage = 'Email atau password salah. Periksa kembali kredensial Anda.';
+      if (authError) {
+        const errorMsgLower = authError.message.toLowerCase();
+        if (errorMsgLower.includes('confirm') || errorMsgLower.includes('verif') || errorMsgLower.includes('not confirmed')) {
+          friendlyMessage = 'Email belum dikonfirmasi. Silakan periksa inbox email Anda untuk memverifikasi akun sebelum masuk.';
+        } else if (errorMsgLower.includes('invalid login credentials') || errorMsgLower.includes('invalid credentials')) {
+          friendlyMessage = 'Email atau password salah. Periksa kembali kredensial Anda.';
+        } else if (errorMsgLower.includes('too many requests')) {
+          friendlyMessage = 'Terlalu banyak percobaan masuk yang gagal. Silakan coba lagi beberapa saat lagi.';
+        } else {
+          friendlyMessage = authError.message;
+        }
+      }
+
+      return c.json({ 
+        error: 'Login failed', 
+        message: friendlyMessage 
+      }, 401);
+    }
+
+    const userId = authData.user.id;
+
+    // Inisialisasi client Supabase dengan kredensial user saat ini (untuk mematuhi kebijakan RLS)
+    const userClient = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${authData.session.access_token}`,
+          },
+        },
+      }
+    );
+
+    // 2. Ambil profil user dari database profiles menggunakan client terautentikasi (userClient)
+    // agar mematuhi RLS policy yang mengharuskan user terautentikasi
+    const { data: profile, error: profileError } = await userClient
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+
+    if (profileError) {
+      logger.error('❌ Error fetching user profile:', profileError);
+      
+      // Handle missing table error specifically (PGRST205)
+      if (profileError.code === 'PGRST205') {
+        return c.json({ 
+          error: 'Database error', 
+          message: 'Tabel "profiles" tidak ditemukan di database. Pastikan Anda telah menjalankan script database.sql di dashboard Supabase.' 
+        }, 500);
+      }
+      
+      return c.json({ error: 'Database error', message: 'Gagal mengambil data profil pengguna' }, 500);
+    }
+
+    // Jika profiles belum ada (misal akun dibuat langsung via dashboard Supabase), buat profil default otomatis
+    let userRole = 'user';
+    let userProfile = profile;
+
+    if (!profile) {
+      logger.warn(`⚠️ Profile for user ${userId} not found in database. Creating basic profile.`);
+      
+      const isKomunitasEmail = authData.user.email?.toLowerCase().endsWith('@komunitas.id');
+      const defaultRole = isKomunitasEmail ? 'superadmin' : 'user';
+      userRole = defaultRole;
+      
+      const { data: newProfile, error: createError } = await userClient
+        .from('profiles')
+        .insert({
+          id: userId,
+          email: authData.user.email!,
+          nik: '0000000000000000', // placeholder
+          nama_lengkap: authData.user.user_metadata?.nama_lengkap || (isKomunitasEmail ? 'Superadmin KOMUNITAS' : 'Pengguna KOMUNITAS'),
+          nama_panggilan: authData.user.user_metadata?.nama_panggilan || (isKomunitasEmail ? 'Superadmin' : 'User'),
+          nomor_telepon: '+628000000000', // placeholder
+          role: defaultRole,
+        })
+        .select()
+        .single();
+ 
+      if (createError) {
+        logger.error('❌ Failed to create auto-profile:', createError);
+        // Fallback profile in memory so login succeeds
+        userProfile = {
+          id: userId,
+          email: authData.user.email!,
+          nik: '0000000000000000',
+          nama_lengkap: isKomunitasEmail ? 'Superadmin KOMUNITAS' : 'Pengguna KOMUNITAS',
+          nama_panggilan: isKomunitasEmail ? 'Superadmin' : 'User',
+          nomor_telepon: '+628000000000',
+          role: defaultRole,
+        };
+      } else {
+        userProfile = newProfile;
+        userRole = newProfile.role;
+      }
+    } else {
+      userRole = profile.role;
+      
+      // Auto-heal: Jika email berakhiran @komunitas.id tetapi role-nya masih 'user', update otomatis ke 'superadmin'
+      if (profile.email?.toLowerCase().endsWith('@komunitas.id')) {
+        userRole = 'superadmin';
+        if (userProfile) {
+          userProfile.role = 'superadmin';
+        }
+        
+        if (profile.role !== 'superadmin') {
+          logger.info(`🔧 Auto-healing role to 'superadmin' for existing staff profile: ${profile.email}`);
+          userClient
+            .from('profiles')
+            .update({ role: 'superadmin' })
+            .eq('id', userId)
+            .then(({ error }) => {
+              if (error) {
+                logger.error('❌ Failed to auto-heal profile role in DB-async:', error);
+              } else {
+                logger.info('✅ Successfully auto-healed profile role in DB to superadmin');
+              }
+            });
+        }
+      }
+    }
+
+    logger.info(`✅ Login successful for ${validated.email} with role [${userRole}]`);
+
+    return c.json({
+      success: true,
+      message: 'Login berhasil!',
+      session: {
+        access_token: authData.session.access_token,
+        refresh_token: authData.session.refresh_token,
+        expires_at: authData.session.expires_at,
+      },
+      user: {
+        id: userId,
+        email: authData.user.email,
+        nama_lengkap: userProfile?.nama_lengkap || 'Pengguna KOMUNITAS',
+        nama_panggilan: userProfile?.nama_panggilan || 'User',
+        nik: userProfile?.nik || '',
+        nomor_telepon: userProfile?.nomor_telepon || '',
+        tanggal_lahir: userProfile?.tanggal_lahir || '',
+        role: userRole,
+      }
+    });
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      const firstError = error.issues[0]?.message || 'Format login salah';
+      return c.json({ error: 'ValidationError', message: firstError }, 400);
+    }
+
+    logger.error('🔥 Login unhandled error:', error);
+    return c.json({ error: 'InternalServerError', message: error.message || 'Terjadi kesalahan internal server' }, 500);
+  }
+};
+
+/**
+ * Me Controller (Ambil data user saat ini berdasarkan JWT)
+ * GET /api/auth/me
+ */
+export const meController = async (c: Context) => {
+  try {
+    const user = c.get('user');
+    const profile = c.get('profile');
+
+    if (!user) {
+      return c.json({ error: 'Unauthorized', message: 'Sesi tidak aktif atau tidak valid' }, 401);
+    }
+
+    return c.json({
+      success: true,
+      user: {
+        id: user.id,
+        email: user.email,
+        nama_lengkap: profile?.nama_lengkap || 'Pengguna KOMUNITAS',
+        nama_panggilan: profile?.nama_panggilan || 'User',
+        nik: profile?.nik || '',
+        nomor_telepon: profile?.nomor_telepon || '',
+        tanggal_lahir: profile?.tanggal_lahir || '',
+        role: profile?.role || 'user',
+      }
+    });
+  } catch (error: any) {
+    logger.error('🔥 Get current user error:', error);
+    return c.json({ error: 'InternalServerError', message: error.message || 'Gagal mengambil informasi sesi' }, 500);
+  }
+};
+
+// Schema validasi untuk pembuatan staf baru oleh Admin/Superadmin
+export const createStaffSchema = z.object({
+  email: z.string().email('Format email tidak valid'),
+  password: z.string().min(8, 'Password minimal harus 8 karakter'),
+  nik: z.string()
+    .length(16, 'NIK harus tepat 16 digit')
+    .regex(/^\d+$/, 'NIK harus berupa angka saja'),
+  nama_lengkap: z.string().min(1, 'Nama lengkap wajib diisi sesuai KTP'),
+  nama_panggilan: z.string().min(1, 'Nama panggilan wajib diisi'),
+  tanggal_lahir: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal lahir harus YYYY-MM-DD'),
+  nomor_telepon: z.string().regex(/^\+62\d{10,13}$/, 'Format nomor telepon harus diawali dengan +62 dan diikuti 10-13 digit angka').optional(),
+  no_hp: z.string().regex(/^\+62\d{10,13}$/, 'Format nomor telepon harus diawali dengan +62 dan diikuti 10-13 digit angka').optional(),
+  role: z.enum(['admin', 'petugas'], { message: 'Peran harus berupa admin atau petugas' }),
+}).refine(data => data.nomor_telepon || data.no_hp, {
+  message: 'Salah satu dari nomor_telepon atau no_hp wajib diisi',
+  path: ['nomor_telepon']
+});
+
+/**
+ * Create Staff User Controller
+ * POST /api/admin/create-user
+ * Khusus untuk Admin & Superadmin membuat akun staf baru (Admin/Petugas Pelayanan)
+ */
+export const createStaffUserController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = createStaffSchema.parse(body);
+
+    logger.info(`👤 Staff creation request by Admin. New user: ${validated.email} with role [${validated.role}]`);
+
+    // 1. Cek duplikasi NIK di database profiles terlebih dahulu
+    const { data: existingNik, error: nikCheckError } = await supabase
+      .from('profiles')
+      .select('nik')
+      .eq('nik', validated.nik)
+      .maybeSingle();
+
+    if (nikCheckError) {
+      logger.error('❌ Error checking NIK duplication:', nikCheckError);
+      return c.json({ error: 'Database error', message: 'Gagal melakukan verifikasi NIK' }, 500);
+    }
+
+    if (existingNik) {
+      return c.json({ 
+        error: 'Staff creation failed', 
+        message: 'Nomor NIK ini sudah pernah terdaftar' 
+      }, 400);
+    }
+
+    // 2. Daftar ke Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: validated.email,
+      password: validated.password,
+      options: {
+        data: {
+          role: validated.role,
+          nama_lengkap: validated.nama_lengkap,
+        }
+      }
+    });
+
+    if (authError || !authData.user) {
+      logger.error('❌ Supabase Auth registration error for staff:', authError);
+      return c.json({ 
+        error: 'Staff creation failed', 
+        message: authError?.message || 'Gagal mendaftarkan staf di sistem autentikasi' 
+      }, 400);
+    }
+
+    const userId = authData.user.id;
+    const resolvedPhone = validated.nomor_telepon || validated.no_hp || '';
+
+    // 3. Masukkan profil tambahan ke tabel profiles
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
+        email: validated.email,
+        nik: validated.nik,
+        nama_lengkap: validated.nama_lengkap,
+        nama_panggilan: validated.nama_panggilan,
+        tanggal_lahir: validated.tanggal_lahir,
+        nomor_telepon: resolvedPhone,
+        role: validated.role,
+      });
+
+    if (profileError) {
+      logger.error('❌ Profiles table insertion error for staff:', profileError);
+      return c.json({ 
+        error: 'Profile creation failed', 
+        message: 'Akun staf dibuat, namun pengisian profil database gagal: ' + profileError.message 
+      }, 500);
+    }
+
+    logger.info('✅ Staff account & profile created successfully:', validated.email);
+
+    return c.json({
+      success: true,
+      message: `Akun staf baru dengan peran "${validated.role}" berhasil dibuat!`,
+      user: {
+        id: userId,
+        email: validated.email,
+        nama_lengkap: validated.nama_lengkap,
+        nama_panggilan: validated.nama_panggilan,
+        role: validated.role
+      }
+    }, 201);
+
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      const firstError = error.issues[0]?.message || 'Validasi staf gagal';
+      return c.json({ error: 'ValidationError', message: firstError }, 400);
+    }
+
+    logger.error('🔥 Staff creation unhandled error:', error);
+    return c.json({ error: 'InternalServerError', message: error.message || 'Terjadi kesalahan internal server' }, 500);
+  }
+};
+
+
+/**
+ * Get Staff Users Controller - Mengambil daftar akun staf (admin/petugas/superadmin)
+ * GET /api/admin/staff
+ */
+export const getStaffUsersController = async (c: Context) => {
+  try {
+    logger.info('👥 Admin: Get staff users list');
+    const { data: staffList, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .in('role', ['superadmin', 'admin', 'petugas'])
+      .order('nama_lengkap', { ascending: true });
+
+    if (error) throw error;
+
+    return c.json({
+      success: true,
+      data: staffList || [],
+    });
+  } catch (error: any) {
+    logger.error('❌ Get staff users list error:', error);
+    return c.json({ error: 'Gagal mengambil daftar staf', message: error.message }, 500);
+  }
+};

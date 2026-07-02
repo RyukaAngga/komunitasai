@@ -23,6 +23,18 @@ const api = axios.create({
   timeout: 30000, // 30 seconds timeout for AI responses
 })
 
+// Request interceptor to automatically attach JWT token
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem('komunitas_access_token')
+    if (token && config.headers) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response) => response,
@@ -192,6 +204,14 @@ Saya mendeteksi pertanyaan Anda berkaitan dengan informasi umum. Untuk memberika
     const response = await api.get('/health')
     return response.data
   },
+
+  /**
+   * Ambil daftar obrolan aktif (admin)
+   */
+  getActiveChats: async (): Promise<{ success: boolean; data: any[] }> => {
+    const response = await api.get<{ success: boolean; data: any[] }>('/api/chat/active')
+    return response.data
+  },
 }
 
 // ─── Admin Service ─────────────────────────────────────────────────────────────
@@ -208,6 +228,9 @@ export interface CitizenReport {
   latitude?: number
   longitude?: number
   image_url?: string
+  province?: string
+  city?: string
+  district?: string
   created_at: string
   updated_at: string
 }
@@ -280,9 +303,12 @@ export const adminService = {
   /**
    * Ambil semua laporan aduan (admin)
    */
-  getReports: async (status?: string, page = 1, limit = 20): Promise<ReportsResponse> => {
+  getReports: async (status?: string, page = 1, limit = 20, province?: string, city?: string, district?: string): Promise<ReportsResponse> => {
     const params = new URLSearchParams()
     if (status && status !== 'all') params.set('status', status)
+    if (province && province !== 'all') params.set('province', province)
+    if (city && city !== 'all') params.set('city', city)
+    if (district && district !== 'all') params.set('district', district)
     params.set('page', String(page))
     params.set('limit', String(limit))
     const response = await api.get<ReportsResponse>(`/api/reports?${params.toString()}`)
@@ -302,6 +328,14 @@ export const adminService = {
    */
   getDashboardStats: async (): Promise<DashboardStats> => {
     const response = await api.get<DashboardStats>('/api/admin/stats')
+    return response.data
+  },
+
+  /**
+   * Ambil statistik sebaran wilayah aduan
+   */
+  getReportsStatistics: async (): Promise<any> => {
+    const response = await api.get('/api/reports/statistics')
     return response.data
   },
 
@@ -377,6 +411,77 @@ export const adminService = {
     const response = await api.delete<{ success: boolean; message: string }>(`/api/histories/${sessionId}`)
     return response.data
   },
+
+  /**
+   * Buat user staff baru (admin/superadmin)
+   */
+  createStaffUser: async (staffData: any): Promise<{ success: boolean; message: string }> => {
+    const response = await api.post<{ success: boolean; message: string }>('/api/admin/create-user', staffData)
+    return response.data
+  },
+
+  /**
+   * Ambil daftar akun staf (admin/superadmin)
+   */
+  getStaffUsers: async (): Promise<{ success: boolean; data: any[] }> => {
+    const response = await api.get<{ success: boolean; data: any[] }>('/api/admin/staff')
+    return response.data
+  },
+
+  /**
+   * Ambil database kata kunci hoaks WhatsApp (admin/superadmin)
+   */
+  getHoaxes: async (search?: string, page = 1, limit = 50): Promise<{ hoaxes: any[]; total: number; page: number; totalPages: number; usingFallback: boolean }> => {
+    const params = new URLSearchParams()
+    if (search) params.set('search', search)
+    params.set('page', String(page))
+    params.set('limit', String(limit))
+    const response = await api.get<{ hoaxes: any[]; total: number; page: number; totalPages: number; usingFallback: boolean }>(`/api/admin/hoax?${params.toString()}`)
+    return response.data
+  },
+
+  /**
+   * Buat entri kata kunci hoaks baru (admin/superadmin)
+   */
+  createHoax: async (hoaxData: any): Promise<{ hoax: any; message: string }> => {
+    const response = await api.post<{ hoax: any; message: string }>('/api/admin/hoax', hoaxData)
+    return response.data
+  },
+
+  /**
+   * Update entri kata kunci hoaks (admin/superadmin)
+   */
+  updateHoax: async (id: string, hoaxData: any): Promise<{ hoax: any; message: string }> => {
+    const response = await api.put<{ hoax: any; message: string }>(`/api/admin/hoax/${id}`, hoaxData)
+    return response.data
+  },
+
+  /**
+   * Hapus entri kata kunci hoaks (admin/superadmin)
+   */
+  deleteHoax: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete<{ success: boolean; message: string }>(`/api/admin/hoax/${id}`)
+    return response.data
+  },
+
+  /**
+   * Ambil daftar obrolan aktif (admin)
+   */
+  getActiveChats: async (): Promise<{ success: boolean; data: any[] }> => {
+    const response = await api.get<{ success: boolean; data: any[] }>('/api/chat/active')
+    return response.data
+  },
+}
+
+
+
+// ─── Citizen Service ────────────────────────────────────────────────────────────
+
+export const citizenService = {
+  getReports: async (contact: string, page = 1, limit = 10): Promise<ReportsResponse> => {
+    const response = await api.get<ReportsResponse>(`/api/reports?contact=${encodeURIComponent(contact)}&page=${page}&limit=${limit}`)
+    return response.data
+  }
 }
 
 export default api

@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react'
 import { useChatStore } from '@/store/chatStore'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { AlertTriangle, Plus, MessageSquare, Trash2, MoreHorizontal, Edit3 } from 'lucide-react'
+import { AlertTriangle, Plus, MessageSquare, Trash2, MoreHorizontal, Edit3, Loader2 } from 'lucide-react'
 import { cn, formatDate } from '@/lib/utils'
+import { useAuthStore } from '@/store/authStore'
+import { citizenService, CitizenReport } from '@/services/api'
 import {
   Dialog,
   DialogContent,
@@ -15,9 +17,11 @@ import {
 
 interface ChatSidebarProps {
   onOpenReportModal?: () => void
+  activeReportId?: string | null
+  onSelectReport?: (reportId: string | null) => void
 }
 
-export function ChatSidebar({ onOpenReportModal }: ChatSidebarProps) {
+export function ChatSidebar({ onOpenReportModal, activeReportId, onSelectReport }: ChatSidebarProps) {
   const { 
     sessions, 
     currentSessionId, 
@@ -27,10 +31,54 @@ export function ChatSidebar({ onOpenReportModal }: ChatSidebarProps) {
     renameSession 
   } = useChatStore()
 
+  const { isAuthenticated, user } = useAuthStore()
+  const [reports, setReports] = useState<CitizenReport[]>([])
+  const [loadingReports, setLoadingReports] = useState(false)
+
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null)
   const [editTitle, setEditTitle] = useState('')
   const [activeMenuSessionId, setActiveMenuSessionId] = useState<string | null>(null)
   const [deleteConfirmSessionId, setDeleteConfirmSessionId] = useState<string | null>(null)
+
+  // Fetch citizen reports if authenticated or activeReportId changes
+  useEffect(() => {
+    const fetchUserReports = async () => {
+      setLoadingReports(true)
+      try {
+        if (isAuthenticated && user) {
+          const emailQuery = user.email || ''
+          const phoneQuery = user.nomor_telepon || ''
+          
+          const promises = []
+          if (emailQuery) promises.push(citizenService.getReports(emailQuery))
+          if (phoneQuery) promises.push(citizenService.getReports(phoneQuery))
+          
+          const results = await Promise.all(promises)
+          const allReports = results.flatMap(res => res.reports || [])
+          
+          // De-duplicate based on report ID
+          const uniqueReports = Array.from(new Map(allReports.map(item => [item.id, item])).values())
+          setReports(uniqueReports)
+        } else {
+          const contact = localStorage.getItem('komunitas_guest_contact') || ''
+          if (contact) {
+            const res = await citizenService.getReports(contact)
+            if (res && res.reports) {
+              setReports(res.reports)
+            }
+          } else {
+            setReports([])
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load user complaints:', err)
+      } finally {
+        setLoadingReports(false)
+      }
+    }
+
+    fetchUserReports()
+  }, [isAuthenticated, user, activeReportId])
 
   // Close menu on click outside
   useEffect(() => {
@@ -38,7 +86,6 @@ export function ChatSidebar({ onOpenReportModal }: ChatSidebarProps) {
     const handleOutsideClick = () => {
       setActiveMenuSessionId(null)
     }
-    // Listen on document
     document.addEventListener('click', handleOutsideClick)
     return () => {
       document.removeEventListener('click', handleOutsideClick)
@@ -58,10 +105,13 @@ export function ChatSidebar({ onOpenReportModal }: ChatSidebarProps) {
       <div className="p-3 space-y-2 border-b border-zinc-800 shrink-0">
         <Button
           className="w-full gap-2 h-9 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium text-[12px] rounded-md transition-all active:scale-[0.98] tracking-[-0.01em]"
-          onClick={() => createSession()}
+          onClick={() => {
+            if (onSelectReport) onSelectReport(null) // Switch to AI Chat
+            createSession()
+          }}
         >
           <Plus className="w-3.5 h-3.5" />
-          Chat Baru
+          Chat Baru (Asisten AI)
         </Button>
 
         {onOpenReportModal && (
@@ -78,136 +128,202 @@ export function ChatSidebar({ onOpenReportModal }: ChatSidebarProps) {
 
       {/* ── History list ─── */}
       <ScrollArea className="flex-1 px-2 py-3">
-        {sessions.length === 0 ? (
-          <div className="text-center py-14 px-4 space-y-2">
-            <MessageSquare className="w-7 h-7 mx-auto text-zinc-700" />
-            <p className="text-[12px] text-zinc-500 font-medium">Belum ada percakapan</p>
-            <p className="text-[11px] text-zinc-600 leading-relaxed">Mulai dengan menekan "Chat Baru"</p>
-          </div>
-        ) : (
-          <div className="space-y-0.5">
-            {sessions.map((session) => {
-              const isActive = currentSessionId === session.id
-              const isEditing = editingSessionId === session.id
+        {/* SECTION 1: ADUAN SAYA (REAL-TIME CHAT WITH PETUGAS) */}
+        {(isAuthenticated || reports.length > 0) && (
+          <div className="mb-5 space-y-2">
+            <div className="px-3 py-1 flex items-center justify-between">
+              <span className="text-[10px] uppercase tracking-wider font-semibold font-mono text-zinc-500">Aduan Saya (Real-time)</span>
+              {loadingReports && <Loader2 className="w-3 h-3 animate-spin text-zinc-500" />}
+            </div>
 
-              return (
-                <div
-                  key={session.id}
-                  className={cn(
-                    'group relative flex items-center gap-2.5 pl-3 pr-8 py-2.5 rounded-md cursor-pointer transition-all duration-150',
-                    isActive
-                      ? 'bg-zinc-800 text-zinc-100'
-                      : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50'
-                  )}
-                  onClick={() => {
-                    if (!isEditing) {
-                      setCurrentSession(session.id)
-                    }
-                  }}
-                >
-                  <MessageSquare className={cn('w-3.5 h-3.5 flex-shrink-0', isActive ? 'text-zinc-300' : 'text-zinc-600 group-hover:text-zinc-400')} />
-                  
-                  <div className="flex-1 min-w-0">
-                    {isEditing ? (
-                      <input
-                        type="text"
-                        value={editTitle}
-                        onChange={(e) => setEditTitle(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.stopPropagation()
+            {loadingReports && reports.length === 0 ? (
+              <div className="text-center py-4 text-[11px] text-zinc-650">Memuat aduan...</div>
+            ) : reports.length === 0 ? (
+              <div className="px-3 py-2 text-[11px] text-zinc-650 italic leading-relaxed">
+                Belum ada aduan masuk. Gunakan tombol "Lapor Warga" di atas untuk melaporkan kasus.
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {reports.map((report) => {
+                  const isActive = activeReportId === report.id
+                  const statusColors = {
+                    Menunggu: 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+                    Diproses: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+                    Selesai: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+                    Ditolak: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+                  }
+                  const currentStatus = report.status || 'Menunggu'
+
+                  return (
+                    <div
+                      key={report.id}
+                      className={cn(
+                        'group relative flex flex-col gap-1 px-3 py-2.5 rounded-md cursor-pointer transition-all duration-150 border',
+                        isActive
+                          ? 'bg-zinc-800 border-zinc-700 text-zinc-100 shadow-sm'
+                          : 'bg-zinc-900/10 border-transparent text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/30'
+                      )}
+                      onClick={() => {
+                        if (onSelectReport) {
+                          onSelectReport(report.id)
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-[12px] font-semibold truncate tracking-[-0.01em]">{report.category}</span>
+                        <span className={cn('text-[9px] font-semibold px-1.5 py-0.5 rounded border leading-none', statusColors[currentStatus])}>
+                          {currentStatus}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 truncate max-w-[190px]">{report.description}</p>
+                      <span className="text-[9px] text-zinc-600 font-mono mt-0.5">{formatDate(report.created_at)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <hr className="border-zinc-800/80 my-3 mx-1" />
+          </div>
+        )}
+
+        {/* SECTION 2: RIWAYAT CHAT AI */}
+        <div className="space-y-1.5">
+          <div className="px-3 py-1 flex items-center justify-between">
+            <span className="text-[10px] uppercase tracking-wider font-semibold font-mono text-zinc-500">Konsultasi AI</span>
+          </div>
+
+          {sessions.length === 0 ? (
+            <div className="text-center py-8 px-4 space-y-2">
+              <MessageSquare className="w-6 h-6 mx-auto text-zinc-800" />
+              <p className="text-[11px] text-zinc-500">Belum ada percakapan</p>
+              <p className="text-[10px] text-zinc-600 leading-relaxed">Mulai dengan menekan "Chat Baru"</p>
+            </div>
+          ) : (
+            <div className="space-y-0.5">
+              {sessions.map((session) => {
+                const isActive = !activeReportId && currentSessionId === session.id
+                const isEditing = editingSessionId === session.id
+
+                return (
+                  <div
+                    key={session.id}
+                    className={cn(
+                      'group relative flex items-center gap-2.5 pl-3 pr-8 py-2.5 rounded-md cursor-pointer transition-all duration-150',
+                      isActive
+                        ? 'bg-zinc-800 text-zinc-100'
+                        : 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800/50'
+                    )}
+                    onClick={() => {
+                      if (!isEditing) {
+                        if (onSelectReport) onSelectReport(null) // Exit report mode
+                        setCurrentSession(session.id)
+                      }
+                    }}
+                  >
+                    <MessageSquare className={cn('w-3.5 h-3.5 flex-shrink-0', isActive ? 'text-zinc-300' : 'text-zinc-600 group-hover:text-zinc-400')} />
+                    
+                    <div className="flex-1 min-w-0">
+                      {isEditing ? (
+                        <input
+                          type="text"
+                          value={editTitle}
+                          onChange={(e) => setEditTitle(e.target.value)}
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.stopPropagation()
+                              if (editTitle.trim()) {
+                                renameSession(session.id, editTitle.trim())
+                              }
+                              setEditingSessionId(null)
+                            } else if (e.key === 'Escape') {
+                              e.stopPropagation()
+                              setEditingSessionId(null)
+                            }
+                          }}
+                          onBlur={() => {
                             if (editTitle.trim()) {
                               renameSession(session.id, editTitle.trim())
                             }
                             setEditingSessionId(null)
-                          } else if (e.key === 'Escape') {
-                            e.stopPropagation()
-                            setEditingSessionId(null)
-                          }
-                        }}
-                        onBlur={() => {
-                          if (editTitle.trim()) {
-                            renameSession(session.id, editTitle.trim())
-                          }
-                          setEditingSessionId(null)
-                        }}
-                        autoFocus
-                        className="w-full bg-zinc-950 border border-zinc-700 rounded px-1.5 py-0.5 text-[11.5px] text-zinc-200 focus:outline-none focus:border-zinc-500"
-                      />
-                    ) : (
-                      <>
-                        <div className="text-[12px] font-medium truncate tracking-[-0.01em]">
-                          {session.title || 'Percakapan baru'}
-                        </div>
-                        <div className="text-[9.5px] text-zinc-600 mt-0.5 font-mono">
-                          {formatDate(session.updatedAt)}
-                        </div>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Three dots actions menu */}
-                  {!isEditing && (
-                    <div 
-                      className={cn(
-                        "absolute right-1 top-1/2 -translate-y-1/2 z-10 transition-all duration-150 flex items-center pl-5 rounded-r-md",
-                        "opacity-0 group-hover:opacity-100",
-                        (isActive || activeMenuSessionId === session.id) && "opacity-100",
-                        isActive 
-                          ? "bg-gradient-to-l from-zinc-800 via-zinc-800/95 to-transparent" 
-                          : "bg-gradient-to-l from-zinc-900 via-zinc-900/95 to-transparent group-hover:from-zinc-800/50 group-hover:via-zinc-800/40"
-                      )}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        className={cn(
-                          "p-1 text-zinc-500 hover:text-zinc-300 rounded transition-all cursor-pointer",
-                          isActive ? "bg-zinc-800" : "bg-zinc-900 group-hover:bg-zinc-800/50"
-                        )}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setActiveMenuSessionId(activeMenuSessionId === session.id ? null : session.id)
-                        }}
-                        aria-label="Aksi obrolan"
-                      >
-                        <MoreHorizontal className="w-3.5 h-3.5" />
-                      </button>
- 
-                      {activeMenuSessionId === session.id && (
-                        <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 py-1 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
-                          <button
-                            className="w-full text-left px-3 py-1.5 text-[11.5px] text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setEditingSessionId(session.id)
-                              setEditTitle(session.title)
-                              setActiveMenuSessionId(null)
-                            }}
-                          >
-                            <Edit3 className="w-3 h-3 text-zinc-500" />
-                            Ubah Nama
-                          </button>
-                          <button
-                            className="w-full text-left px-3 py-1.5 text-[11.5px] text-rose-400 hover:bg-rose-950/50 hover:text-rose-300 flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              setDeleteConfirmSessionId(session.id)
-                              setActiveMenuSessionId(null)
-                            }}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                            Hapus
-                          </button>
-                        </div>
+                          }}
+                          autoFocus
+                          className="w-full bg-zinc-950 border border-zinc-700 rounded px-1.5 py-0.5 text-[11.5px] text-zinc-200 focus:outline-none focus:border-zinc-500"
+                        />
+                      ) : (
+                        <>
+                          <div className="text-[12px] font-medium truncate tracking-[-0.01em]">
+                            {session.title || 'Percakapan baru'}
+                          </div>
+                          <div className="text-[9.5px] text-zinc-600 mt-0.5 font-mono">
+                            {formatDate(session.updatedAt)}
+                          </div>
+                        </>
                       )}
                     </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        )}
+
+                    {/* Three dots actions menu */}
+                    {!isEditing && (
+                      <div 
+                        className={cn(
+                          "absolute right-1 top-1/2 -translate-y-1/2 z-10 transition-all duration-150 flex items-center pl-5 rounded-r-md",
+                          "opacity-0 group-hover:opacity-100",
+                          (isActive || activeMenuSessionId === session.id) && "opacity-100",
+                          isActive 
+                            ? "bg-gradient-to-l from-zinc-800 via-zinc-800/95 to-transparent" 
+                            : "bg-gradient-to-l from-zinc-900 via-zinc-900/95 to-transparent group-hover:from-zinc-800/50 group-hover:via-zinc-800/40"
+                        )}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          className={cn(
+                            "p-1 text-zinc-500 hover:text-zinc-300 rounded transition-all cursor-pointer",
+                            isActive ? "bg-zinc-800" : "bg-zinc-900 group-hover:bg-zinc-800/50"
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setActiveMenuSessionId(activeMenuSessionId === session.id ? null : session.id)
+                          }}
+                          aria-label="Aksi obrolan"
+                        >
+                          <MoreHorizontal className="w-3.5 h-3.5" />
+                        </button>
+   
+                        {activeMenuSessionId === session.id && (
+                          <div className="absolute right-0 top-full mt-1 w-32 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-20 py-1 overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150">
+                            <button
+                              className="w-full text-left px-3 py-1.5 text-[11.5px] text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setEditingSessionId(session.id)
+                                setEditTitle(session.title)
+                                setActiveMenuSessionId(null)
+                              }}
+                            >
+                              <Edit3 className="w-3 h-3 text-zinc-500" />
+                              Ubah Nama
+                            </button>
+                            <button
+                              className="w-full text-left px-3 py-1.5 text-[11.5px] text-rose-400 hover:bg-rose-950/50 hover:text-rose-300 flex items-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setDeleteConfirmSessionId(session.id)
+                                setActiveMenuSessionId(null)
+                              }}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              Hapus
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </ScrollArea>
 
       {/* Delete Confirmation Dialog */}

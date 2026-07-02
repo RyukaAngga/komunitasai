@@ -8,11 +8,11 @@ import { logger } from '../utils/logger';
 
 // Ambil konfigurasi dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_ANON_KEY!;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
 
 /**
  * Inisialisasi client Supabase
- * Gunakan URL dan anon key dari .env
+ * Gunakan service role key jika ada (untuk bypass RLS di backend), jika tidak gunakan anon key.
  */
 export const supabase = createClient(supabaseUrl, supabaseKey);
 

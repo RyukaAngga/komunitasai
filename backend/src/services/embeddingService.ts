@@ -27,7 +27,7 @@ export const getEmbedding = async (text: string): Promise<number[]> => {
         'Authorization': `Bearer ${API_KEY}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'http://localhost:3000',
-        'X-Title': 'SahabatLKS - Embeddings API'
+        'X-Title': 'KOMUNITAS - Embeddings API'
       },
       body: JSON.stringify({
         model: EMBEDDING_MODEL,

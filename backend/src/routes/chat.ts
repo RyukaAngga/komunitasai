@@ -15,12 +15,16 @@ import {
   extractFileController
 } from '../controllers/chatController';
 import { rateLimiter } from '../utils/rateLimiter';
+import { optionalAuthMiddleware } from '../utils/authMiddleware';
 
 // Inisialisasi router untuk chat
 const chat = new Hono();
 
 // Mount rate limiter middleware untuk semua endpoint chat & AI (60 request per menit per IP)
 chat.use('*', rateLimiter(60, 60 * 1000));
+
+// Terapkan deteksi autentikasi opsional agar info user masuk ke context Hono jika sedang login
+chat.use('*', optionalAuthMiddleware);
 
 // --- Endpoint definitions ---
 

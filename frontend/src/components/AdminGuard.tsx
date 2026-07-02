@@ -1,45 +1,56 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { Loader2 } from 'lucide-react'
-import { authService } from '@/services/auth'
+import { useAuthStore } from '@/store/authStore'
 
 interface AdminGuardProps {
   children: React.ReactNode
 }
 
 /**
- * Komponen guard yang melindungi route /admin
- * Redirect ke /admin/login jika user belum login
+ * Guard komponen untuk melindung rute administrasi internal (/admin)
+ * Memverifikasi sesi aktif dan memastikan user memiliki peran admin/petugas/superadmin
  */
 export function AdminGuard({ children }: AdminGuardProps) {
-  const [status, setStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading')
+  const { isAuthenticated, user, checkMe, isLoading } = useAuthStore()
+  const [checking, setChecking] = useState(true)
+  const location = useLocation()
 
   useEffect(() => {
-    authService.getSession().then(session => {
-      setStatus(session ? 'authenticated' : 'unauthenticated')
-    })
+    const verifySession = async () => {
+      try {
+        if (isAuthenticated && !user) {
+          await checkMe()
+        }
+      } catch (err) {
+        console.error('Failed to verify session in AdminGuard:', err)
+      } finally {
+        setChecking(false)
+      }
+    }
 
-    // Listen perubahan auth state (login/logout)
-    const { data: { subscription } } = authService.onAuthStateChange((_event, session) => {
-      setStatus(session ? 'authenticated' : 'unauthenticated')
-    })
+    verifySession()
+  }, [isAuthenticated, user, checkMe])
 
-    return () => subscription.unsubscribe()
-  }, [])
-
-  if (status === 'loading') {
+  if (isLoading || checking) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#080808]">
+      <div className="flex h-screen w-screen items-center justify-center bg-[#080808] text-zinc-100">
         <div className="flex flex-col items-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-white/20" />
-          <p className="text-sm text-white/30">Memeriksa sesi...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-zinc-600" />
+          <p className="text-xs text-zinc-500 tracking-wider">Memvalidasi hak akses admin...</p>
         </div>
       </div>
     )
   }
 
-  if (status === 'unauthenticated') {
-    return <Navigate to="/admin/login" replace />
+  // Jika belum login, alihkan ke halaman login terpadu
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // Jika login tetapi perannya adalah user (warga biasa), tidak diizinkan masuk ke panel admin
+  if (user && user.role === 'user') {
+    return <Navigate to="/" replace />
   }
 
   return <>{children}</>

@@ -6,10 +6,15 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { createBunWebSocket } from 'hono/bun';
 import chatRoutes from './routes/chat';
+import authRoutes from './routes/auth';
+import { rateLimiter } from './utils/rateLimiter';
+import { getMessages, persistMessage } from './services/chatWebSocketService';
 import { 
   createReportController,
   getReportsController,
+  getReportsStatisticsController,
   updateReportStatusController,
   getDashboardStatsController,
   createServiceController,
@@ -21,10 +26,92 @@ import {
   deleteSummaryController,
   getChatHistoriesController,
   deleteHistoryController,
+  getActiveChatsController,
 } from './controllers/chatController';
+import { authMiddleware, requireRoles, optionalAuthMiddleware } from './utils/authMiddleware';
+import { createStaffUserController, getStaffUsersController } from './controllers/authController';
+import {
+  whatsappWebhookController,
+  getHoaxesController,
+  createHoaxController,
+  updateHoaxController,
+  deleteHoaxController,
+} from './controllers/whatsappController';
 
 // --- Inisialisasi App ---
 const app = new Hono();
+
+// --- WebSocket Setup ---
+const { upgradeWebSocket, websocket } = createBunWebSocket();
+
+// Map untuk melacak koneksi aktif per reportId (room)
+const activeRooms = new Map<string, Set<any>>();
+
+app.get(
+  '/api/ws/chat',
+  upgradeWebSocket((c) => {
+    const reportId = c.req.query('reportId');
+    const userId = c.req.query('userId');
+    const role = c.req.query('role');
+    const name = c.req.query('name') || 'Warga';
+
+    if (!reportId || !userId || !role) {
+      console.error('❌ [WS Chat] Upgrade connection failed: Missing parameters');
+      return {};
+    }
+
+    return {
+      onOpen(evt, ws) {
+        console.log(`🔌 [WS Chat] Connection opened. Report: ${reportId}, User: ${userId}, Role: ${role}`);
+        if (!activeRooms.has(reportId)) {
+          activeRooms.set(reportId, new Set());
+        }
+        activeRooms.get(reportId)!.add(ws);
+      },
+      async onMessage(evt, ws) {
+        try {
+          const payload = typeof evt.data === 'string' ? JSON.parse(evt.data) : evt.data;
+          
+          if (payload && payload.type === 'message') {
+            const senderId = payload.senderId || userId;
+            const senderType = (payload.senderType || role) as 'user' | 'petugas';
+            const senderName = payload.senderName || name;
+            const text = payload.text;
+
+            if (!text) return;
+
+            // Simpan ke DB (dengan dual-mode fallback)
+            const savedMsg = await persistMessage(reportId, senderId, senderType, senderName, text);
+
+            // Siarkan ke seluruh client di ruangan ini
+            const room = activeRooms.get(reportId);
+            if (room) {
+              const broadcastPayload = JSON.stringify({
+                type: 'message',
+                data: savedMsg
+              });
+              for (const client of room) {
+                client.send(broadcastPayload);
+              }
+            }
+          }
+        } catch (err: any) {
+          console.error('❌ [WS Chat] Error processing message:', err.message || err);
+        }
+      },
+      onClose(evt, ws) {
+        console.log(`🔌 [WS Chat] Connection closed. Report: ${reportId}, User: ${userId}`);
+        const room = activeRooms.get(reportId);
+        if (room) {
+          room.delete(ws);
+          if (room.size === 0) {
+            activeRooms.delete(reportId);
+          }
+        }
+      }
+    };
+  })
+);
 
 // --- Middleware ---
 
@@ -55,15 +142,50 @@ app.use('*', cors({
 app.route('/api/chat', chatRoutes);
 
 /**
+ * Registrasi semua route auth (user login & register)
+ * Semua endpoint di bawah /api/auth
+ */
+app.use('/api/auth/login', rateLimiter(15, 60 * 1000));
+app.use('/api/auth/register', rateLimiter(15, 60 * 1000));
+app.route('/api/auth', authRoutes);
+
+/**
  * Registrasi aduan warga (reports)
  * POST   /api/reports - Buat laporan baru
  * GET    /api/reports - Ambil semua laporan (Admin)
- * PATCH  /api/reports/:id - Update status laporan (Admin)
+ * PATCH  /api/reports/:id - Update status laporan (Admin/Petugas)
  * GET    /api/admin/stats - Statistik dashboard admin
  */
-app.post('/api/reports', createReportController);
-app.get('/api/reports', getReportsController);
-app.patch('/api/reports/:id', updateReportStatusController);
+app.post('/api/reports', optionalAuthMiddleware, createReportController);
+app.get(
+  '/api/reports',
+  optionalAuthMiddleware,
+  getReportsController
+);
+app.get(
+  '/api/reports/statistics',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin', 'petugas']),
+  getReportsStatisticsController
+);
+app.patch(
+  '/api/reports/:id',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin', 'petugas']),
+  updateReportStatusController
+);
+app.get('/api/reports/:id/messages',
+  optionalAuthMiddleware,
+  async (c) => {
+    const reportId = c.req.param('id') || '';
+    try {
+      const messages = await getMessages(reportId);
+      return c.json({ success: true, data: messages });
+    } catch (err: any) {
+      return c.json({ success: false, error: err.message }, 500);
+    }
+  }
+);
 app.get('/api/admin/stats', getDashboardStatsController);
 
 /**
@@ -86,6 +208,116 @@ app.delete('/api/summaries/:id', deleteSummaryController);
 app.get('/api/histories', getChatHistoriesController);
 app.delete('/api/histories/:sessionId', deleteHistoryController);
 
+// --- WhatsApp Bot Webhook (Public) ---
+app.post('/api/whatsapp/webhook', whatsappWebhookController);
+
+// --- Admin & Staff Management (Protected) ---
+// Only superadmin can create admin accounts; both superadmin and admin can create petugas
+app.post(
+  '/api/admin/create-user',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin']),
+  createStaffUserController
+);
+
+app.get(
+  '/api/admin/staff',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin']),
+  getStaffUsersController
+);
+
+// --- WhatsApp Hoax Bot Keyword CRUD (Protected) ---
+app.get(
+  '/api/admin/hoax',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin']),
+  getHoaxesController
+);
+app.post(
+  '/api/admin/hoax',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin']),
+  createHoaxController
+);
+app.put(
+  '/api/admin/hoax/:id',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin']),
+  updateHoaxController
+);
+app.delete(
+  '/api/admin/hoax/:id',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin']),
+  deleteHoaxController
+);
+
+// --- Active chats for admin percakapan tab ---
+app.get(
+  '/api/chat/active',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin', 'petugas']),
+  getActiveChatsController
+);
+
+// --- AI Quota Check Endpoint (for frontend counter UI) ---
+app.get(
+  '/api/chat/quota',
+  async (c) => {
+    try {
+      const { supabase } = await import('./services/supabaseService');
+      const authHeader = c.req.header('Authorization');
+      let userId: string | null = null;
+      if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        const { data: { user } } = await supabase.auth.getUser(token);
+        if (user) userId = user.id;
+      }
+      const sessionId = c.req.query('sessionId') || '';
+      const isUser = !!userId;
+      const limit = isUser ? 20 : 7;
+      if (isUser) {
+        const { data } = await supabase
+          .from('user_usage')
+          .select('prompt_count, reset_at')
+          .eq('user_id', userId)
+          .maybeSingle();
+        if (!data) return c.json({ remaining: limit, limit, resetAt: null });
+        const now = Date.now();
+        if (now > new Date(data.reset_at).getTime()) {
+          return c.json({ remaining: limit, limit, resetAt: null });
+        }
+        return c.json({
+          remaining: Math.max(0, limit - data.prompt_count),
+          limit,
+          resetAt: data.reset_at,
+        });
+      } else {
+        const queryKey = sessionId;
+        if (!queryKey) return c.json({ remaining: limit, limit, resetAt: null });
+        const { data } = await supabase
+          .from('user_usage')
+          .select('prompt_count, reset_at')
+          .eq('session_id', queryKey)
+          .maybeSingle();
+        if (!data) return c.json({ remaining: limit, limit, resetAt: null });
+        const now = Date.now();
+        if (now > new Date(data.reset_at).getTime()) {
+          return c.json({ remaining: limit, limit, resetAt: null });
+        }
+        return c.json({
+          remaining: Math.max(0, limit - data.prompt_count),
+          limit,
+          resetAt: data.reset_at,
+        });
+      }
+    } catch (err: any) {
+      return c.json({ remaining: 7, limit: 7, resetAt: null });
+    }
+  }
+);
+
 // --- Utility Endpoints ---
 
 /**
@@ -104,13 +336,7 @@ app.get('/health', (c) => {
 
 /**
  * Root Endpoint
- * Informasi dasar API
- * GET /
- */
-/**
- * /**
- * Root Endpoint
- * Dokumentasi API Sederhana (Bootstrap 5 - Downgraded/Lazy Style)
+ * Dokumentasi API Sederhana & Portabilitas Entry-Level KOMUNITAS
  * GET /
  */
 app.get('/', (c) => {
@@ -131,40 +357,49 @@ app.get('/', (c) => {
     }
     .title-area {
       margin-bottom: 25px;
+      border-bottom: 2px solid #111827;
+      padding-bottom: 15px;
     }
     .title-area h1 {
-      font-size: 20px;
+      font-size: 22px;
       font-weight: 700;
       color: #111827;
       letter-spacing: -0.02em;
-      margin-bottom: 2px;
+      margin: 0 0 4px 0;
     }
     .title-area p {
       color: #6b7280;
       font-size: 12px;
-      margin-bottom: 5px;
+      margin: 0;
     }
-    .license-link {
-      color: #10b981;
-      text-decoration: none;
-      font-weight: 600;
+    .search-container {
+      margin-bottom: 20px;
     }
-    .license-link:hover {
-      text-decoration: underline;
+    .search-input {
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-size: 12px;
+      width: 100%;
+      max-width: 300px;
+      outline: none;
+    }
+    .search-input:focus {
+      border-color: #0284c7;
     }
     .group-section {
-      margin-top: 30px;
+      margin-top: 25px;
     }
     .group-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      border-bottom: 2px solid #111827;
+      border-bottom: 2px solid #e5e7eb;
       padding-bottom: 4px;
       margin-bottom: 12px;
     }
     .group-title {
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       color: #111827;
       margin: 0;
@@ -176,23 +411,12 @@ app.get('/', (c) => {
       color: #6b7280;
       text-transform: none;
     }
-    .group-actions {
-      font-size: 11px;
-      color: #6b7280;
-    }
-    .group-actions span {
-      cursor: pointer;
-      font-weight: 600;
-    }
-    .group-actions span:hover {
-      color: #111827;
-    }
     .api-row {
       display: flex;
       align-items: center;
-      padding: 6px 12px;
+      padding: 8px 12px;
       cursor: pointer;
-      border-radius: 0px !important;
+      border-radius: 4px;
       margin-bottom: 6px;
       transition: background-color 0.1s ease;
       border: 1px solid;
@@ -206,10 +430,11 @@ app.get('/', (c) => {
       min-width: 60px;
       text-align: center;
       margin-right: 12px;
+      border-radius: 3px;
     }
     .api-path {
       font-weight: 600;
-      font-size: 12px;
+      font-size: 12.5px;
       flex-grow: 1;
     }
     .api-operation {
@@ -265,7 +490,7 @@ app.get('/', (c) => {
       color: #7f1d1d;
     }
 
-    /* PATCH */
+    /* PATCH / PUT */
     .api-row-patch {
       background-color: #fffbeb;
       border-color: #fef3c7;
@@ -281,6 +506,22 @@ app.get('/', (c) => {
       color: #78350f;
     }
 
+    /* WebSocket */
+    .api-row-ws {
+      background-color: #faf5ff;
+      border-color: #e9d5ff;
+      color: #581c87;
+    }
+    .api-row-ws:hover {
+      background-color: #f3e8ff;
+    }
+    .api-row-ws .api-method {
+      background-color: #7c3aed;
+    }
+    .api-row-ws .api-path {
+      color: #4c1d95;
+    }
+
     .api-details {
       border: 1px solid #e5e7eb;
       border-top: none;
@@ -288,20 +529,32 @@ app.get('/', (c) => {
       padding: 12px;
       margin-bottom: 12px;
       margin-top: -6px;
+      border-bottom-left-radius: 4px;
+      border-bottom-right-radius: 4px;
     }
     .api-details pre {
       margin: 0;
       padding: 8px;
       background-color: #f9fafb;
       color: #111827;
-      border: 1px solid #e5e7eb !important;
-      border-radius: 0px !important;
+      border: 1px solid #cbd5e1 !important;
+      border-radius: 4px;
       font-size: 11px;
+    }
+    .auth-badge {
+      background-color: #fef3c7;
+      border: 1px solid #fde68a;
+      color: #b45309;
+      font-size: 9px;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-weight: 700;
+      margin-left: 8px;
     }
     .footer-info {
       font-size: 11px;
       color: #9ca3af;
-      margin-top: 30px;
+      margin-top: 40px;
       border-top: 1px solid #e5e7eb;
       padding-top: 10px;
     }
@@ -309,29 +562,35 @@ app.get('/', (c) => {
 </head>
 <body>
   <div class="container" style="max-width: 900px;">
-    <!-- Minimal Header -->
-    <div class="title-area">
-      <h1>Api Documentation</h1>
-      <p>Api Documentation</p>
-      <a href="http://apache.org/licenses/LICENSE-2.0.html" target="_blank" class="license-link">Apache 2.0</a>
+    
+    <!-- Title Area -->
+    <div class="title-area d-flex justify-content-between align-items-end flex-wrap gap-2">
+      <div>
+        <h1>KOMUNITAS API Hub</h1>
+        <p>Dokumentasi spesifikasi rute & endpoint backend</p>
+      </div>
+      <div class="search-container">
+        <input 
+          type="text" 
+          id="searchBox" 
+          placeholder="Filter rute..." 
+          class="search-input"
+          onkeyup="filterEndpoints()"
+        />
+      </div>
     </div>
 
     <!-- Group 1: chat-controller -->
     <div class="group-section">
       <div class="group-header">
         <h2 class="group-title">
-          chat-controller <span class="group-desc">: AI & Chat Assistant Controller</span>
+          chat-controller <span class="group-desc">: AI & Chat Assistant</span>
         </h2>
-        <div class="group-actions">
-          <span onclick="toggleGroup('chat')">Show/Hide</span> | 
-          <span onclick="toggleGroup('chat')">List Operations</span> | 
-          <span onclick="toggleGroup('chat')">Expand Operations</span>
-        </div>
       </div>
 
       <div id="group-chat">
         <!-- POST /api/chat -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-post" data-bs-toggle="collapse" data-bs-target="#collapse-chat" aria-expanded="false">
             <span class="api-method">POST</span>
             <span class="api-path">/api/chat</span>
@@ -339,7 +598,7 @@ app.get('/', (c) => {
           </div>
           <div class="collapse" id="collapse-chat">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengirim pesan chat asisten AI dengan pencarian semantik (RAG) di database public_services.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengirim pesan chat AI (RAG semantik) tanpa streaming.</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
@@ -353,7 +612,66 @@ app.get('/', (c) => {
                   <pre>{
   "content": "Langkah melapor ke KPAI adalah...",
   "sessionId": "session_xxx",
-  "timestamp": "2026-06-23T12:00:05.000Z"
+  "timestamp": "2026-06-30T12:00:00.000Z"
+}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- POST /api/chat/stream -->
+        <div class="api-item">
+          <div class="api-row api-row-post" data-bs-toggle="collapse" data-bs-target="#collapse-chat-stream" aria-expanded="false">
+            <span class="api-method">POST</span>
+            <span class="api-path">/api/chat/stream</span>
+            <span class="api-operation">chatStreamController</span>
+          </div>
+          <div class="collapse" id="collapse-chat-stream">
+            <div class="api-details">
+              <p class="mb-2"><strong>Deskripsi:</strong> Obrolan asisten AI menggunakan streaming Server-Sent Events (SSE) dengan media gambar.</p>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
+                  <pre>{
+  "message": "pola spasial banjir bandang",
+  "sessionId": "session_xxx",
+  "image": "base64...", // opsional
+  "mimeType": "image/jpeg" // opsional
+}</pre>
+                </div>
+                <div class="col-md-6">
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">SSE Event Payload:</span>
+                  <pre>data: {"type": "token", "content": "..."}
+data: {"type": "search_progress", "phase": "..."}
+data: {"type": "done", "sessionId": "..."}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- GET /api/chat/quota -->
+        <div class="api-item">
+          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-chat-quota" aria-expanded="false">
+            <span class="api-method">GET</span>
+            <span class="api-path">/api/chat/quota</span>
+            <span class="api-operation">quotaCheckEndpoint</span>
+          </div>
+          <div class="collapse" id="collapse-chat-quota">
+            <div class="api-details">
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengecek sisa kuota harian AI untuk IP/User terkait.</p>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Query Params:</span>
+                  <pre>?sessionId=session_xxx</pre>
+                </div>
+                <div class="col-md-6">
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
+                  <pre>{
+  "remaining": 15,
+  "limit": 20,
+  "resetAt": "2026-07-01T12:00:00.000Z"
 }</pre>
                 </div>
               </div>
@@ -362,7 +680,7 @@ app.get('/', (c) => {
         </div>
 
         <!-- POST /api/chat/ocr -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-post" data-bs-toggle="collapse" data-bs-target="#collapse-chat-ocr" aria-expanded="false">
             <span class="api-method">POST</span>
             <span class="api-path">/api/chat/ocr</span>
@@ -370,25 +688,19 @@ app.get('/', (c) => {
           </div>
           <div class="collapse" id="collapse-chat-ocr">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> OCR Vision Dokumen. Mengekstrak teks dari gambar berkas fisik menggunakan AI Vision.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Membaca teks dokumen fisik via AI Vision OCR.</p>
               <div class="row g-2">
                 <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request (JSON/Multipart):</span>
-                  <pre>Multipart Form-data:
-- file: Berkas Gambar (png, jpeg, dll.)
-
-Atau JSON:
-{
-  "image": "data:image/png;base64,iVBOR...",
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
+                  <pre>{
+  "image": "base64...",
   "mimeType": "image/png"
 }</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
-  "text": "[Hasil Ekstraksi Teks]",
-  "content": "[Hasil Ekstraksi Teks]",
-  "timestamp": "2026-06-23T12:00:10.000Z"
+  "text": "[Hasil Ekstraksi Teks]"
 }</pre>
                 </div>
               </div>
@@ -397,7 +709,7 @@ Atau JSON:
         </div>
 
         <!-- POST /api/chat/validate -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-post" data-bs-toggle="collapse" data-bs-target="#collapse-chat-validate" aria-expanded="false">
             <span class="api-method">POST</span>
             <span class="api-path">/api/chat/validate</span>
@@ -405,21 +717,20 @@ Atau JSON:
           </div>
           <div class="collapse" id="collapse-chat-validate">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Verifikasi klaim berita/hoaks menggunakan pencarian internet Google Serper API.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Verifikasi validitas klaim informasi lewat web search grounding.</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
                   <pre>{
-  "claim": "Pemerintah bagikan bansos 5 juta rupiah lewat WhatsApp"
+  "claim": "Bansos tunai dibagikan lewat WA"
 }</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
   "isValid": false,
-  "explanation": "Klaim tersebut tidak benar/hoaks...",
-  "source": "TurnBackHoax.id",
-  "confidence": 95
+  "explanation": "Klaim tersebut palsu/hoaks...",
+  "source": "TurnBackHoax.id"
 }</pre>
                 </div>
               </div>
@@ -428,7 +739,7 @@ Atau JSON:
         </div>
 
         <!-- POST /api/chat/summarize -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-post" data-bs-toggle="collapse" data-bs-target="#collapse-chat-summarize" aria-expanded="false">
             <span class="api-method">POST</span>
             <span class="api-path">/api/chat/summarize</span>
@@ -436,19 +747,18 @@ Atau JSON:
           </div>
           <div class="collapse" id="collapse-chat-summarize">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Meringkas naskah prosedur panjang birokrasi menjadi ringkasan poin dan flowchart Mermaid.js.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Meringkas berkas aturan/konsep birokrasi dan merancang diagram Mermaid.js.</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
                   <pre>{
-  "text": "Salinan aturan birokrasi..."
+  "text": "[Aturan Panjang]"
 }</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
-  "summary": "1. Poin Ringkasan...\\n\\n\`\`\`mermaid\\ngraph TD;\\n...\\n\`\`\`",
-  "timestamp": "2026-06-23T12:00:15.000Z"
+  "summary": "[Hasil Ringkasan + Diagram]"
 }</pre>
                 </div>
               </div>
@@ -457,7 +767,7 @@ Atau JSON:
         </div>
 
         <!-- GET /api/chat/history/:sessionId -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-chat-history" aria-expanded="false">
             <span class="api-method">GET</span>
             <span class="api-path">/api/chat/history/:sessionId</span>
@@ -465,7 +775,7 @@ Atau JSON:
           </div>
           <div class="collapse" id="collapse-chat-history">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil semua riwayat obrolan sesi tertentu berdasarkan sessionId.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil riwayat percakapan sesi AI.</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Params:</span>
@@ -475,40 +785,8 @@ Atau JSON:
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
   "history": [
-    { "role": "user", "content": "..." },
-    { "role": "assistant", "content": "..." }
-  ],
-  "messages": [
-    { "role": "user", "content": "..." },
-    { "role": "assistant", "content": "..." }
+    { "role": "user", "content": "..." }
   ]
-}</pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- DELETE /api/chat/history/:sessionId -->
-        <div>
-          <div class="api-row api-row-delete" data-bs-toggle="collapse" data-bs-target="#collapse-chat-history-delete" aria-expanded="false">
-            <span class="api-method">DELETE</span>
-            <span class="api-path">/api/chat/history/:sessionId</span>
-            <span class="api-operation">deleteHistoryController</span>
-          </div>
-          <div class="collapse" id="collapse-chat-history-delete">
-            <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Menghapus riwayat sesi chat tertentu dari database Supabase.</p>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Params:</span>
-                  <pre>Path: sessionId (string)</pre>
-                </div>
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
-                  <pre>{
-  "success": true,
-  "message": "Riwayat chat berhasil dihapus."
 }</pre>
                 </div>
               </div>
@@ -522,18 +800,13 @@ Atau JSON:
     <div class="group-section">
       <div class="group-header">
         <h2 class="group-title">
-          report-controller <span class="group-desc">: Citizen Report Controller</span>
+          report-controller <span class="group-desc">: Citizen Report & Messages</span>
         </h2>
-        <div class="group-actions">
-          <span onclick="toggleGroup('report')">Show/Hide</span> | 
-          <span onclick="toggleGroup('report')">List Operations</span> | 
-          <span onclick="toggleGroup('report')">Expand Operations</span>
-        </div>
       </div>
 
       <div id="group-report">
         <!-- POST /api/reports -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-post" data-bs-toggle="collapse" data-bs-target="#collapse-report-post" aria-expanded="false">
             <span class="api-method">POST</span>
             <span class="api-path">/api/reports</span>
@@ -541,17 +814,20 @@ Atau JSON:
           </div>
           <div class="collapse" id="collapse-report-post">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Kirim aduan darurat warga dengan lokasi koordinat GPS.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Membuat aduan/pengaduan insiden terintegrasi lokasi GPS koordinat.</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
                   <pre>{
   "reporterName": "Budi",
-  "reporterContact": "08123456789",
-  "category": "Keamanan / Kriminalitas",
-  "description": "Terjadi pencurian sepeda motor...",
-  "latitude": -6.2088, // opsional
-  "longitude": 106.8456 // opsional
+  "reporterContact": "+6281234567890",
+  "category": "Infrastruktur",
+  "description": "Jalan amblas...",
+  "latitude": -6.2088,
+  "longitude": 106.8456,
+  "province": "Jawa Barat",
+  "city": "Bandung",
+  "district": "Coblong"
 }</pre>
                 </div>
                 <div class="col-md-6">
@@ -559,7 +835,7 @@ Atau JSON:
                   <pre>{
   "id": "report-uuid",
   "status": "Menunggu",
-  "message": "Laporan Anda berhasil disimpan dan sedang diverifikasi."
+  "message": "Laporan berhasil disimpan."
 }</pre>
                 </div>
               </div>
@@ -568,33 +844,26 @@ Atau JSON:
         </div>
 
         <!-- GET /api/reports -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-report-get" aria-expanded="false">
             <span class="api-method">GET</span>
             <span class="api-path">/api/reports</span>
             <span class="api-operation">getReportsController</span>
+            <span class="auth-badge">RBAC REQUIRED</span>
           </div>
           <div class="collapse" id="collapse-report-get">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil semua daftar laporan warga dengan filter status aduan serta pagination (Admin).</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil semua daftar laporan warga dengan filter wilayah dan status (Khusus Staf/Admin).</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Query Params:</span>
-                  <pre>?status=Menunggu&page=1&limit=20</pre>
+                  <pre>?status=Menunggu&province=Jawa Barat&page=1</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
-  "reports": [
-    {
-      "id": "report-uuid",
-      "reporter_name": "Budi",
-      "status": "Menunggu",
-      ...
-    }
-  ],
-  "total": 12,
-  "totalPages": 1
+  "reports": [...],
+  "total": 5
 }</pre>
                 </div>
               </div>
@@ -603,28 +872,28 @@ Atau JSON:
         </div>
 
         <!-- PATCH /api/reports/:id -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-patch" data-bs-toggle="collapse" data-bs-target="#collapse-report-patch" aria-expanded="false">
             <span class="api-method">PATCH</span>
             <span class="api-path">/api/reports/:id</span>
             <span class="api-operation">updateReportStatusController</span>
+            <span class="auth-badge">RBAC REQUIRED</span>
           </div>
           <div class="collapse" id="collapse-report-patch">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengubah status laporan pengaduan warga serta menambahkan catatan admin.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengubah status penanganan aduan warga.</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
                   <pre>{
   "status": "Diproses",
-  "adminNote": "Laporan diteruskan ke polsek terdekat"
+  "adminNote": "Petugas meluncur..."
 }</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
-  "report": { ... },
-  "message": "Status laporan berhasil diubah ke \"Diproses\""
+  "message": "Status laporan berhasil diubah ke Diproses"
 }</pre>
                 </div>
               </div>
@@ -632,32 +901,33 @@ Atau JSON:
           </div>
         </div>
 
-        <!-- GET /api/admin/stats -->
-        <div>
-          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-report-stats" aria-expanded="false">
+        <!-- GET /api/reports/:id/messages -->
+        <div class="api-item">
+          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-report-messages" aria-expanded="false">
             <span class="api-method">GET</span>
-            <span class="api-path">/api/admin/stats</span>
-            <span class="api-operation">getDashboardStatsController</span>
+            <span class="api-path">/api/reports/:id/messages</span>
+            <span class="api-operation">getMessages</span>
+            <span class="auth-badge">AUTH REQUIRED</span>
           </div>
-          <div class="collapse" id="collapse-report-stats">
+          <div class="collapse" id="collapse-report-messages">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Menghitung total laporan, total sesi obrolan, serta pembagian jumlah laporan berdasarkan masing-masing status untuk dasbor admin.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil riwayat pesan diskusi aduan antara warga dan petugas.</p>
               <div class="row g-2">
                 <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request:</span>
-                  <pre>None</pre>
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Params:</span>
+                  <pre>Path: id (UUID Laporan)</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
-  "totalReports": 24,
-  "totalSessions": 56,
-  "statusCounts": {
-    "Menunggu": 4,
-    "Diproses": 10,
-    "Selesai": 10,
-    "Ditolak": 0
-  }
+  "success": true,
+  "data": [
+    {
+      "sender_name": "Petugas Fikri",
+      "message": "Sedang kami periksa...",
+      "created_at": "..."
+    }
+  ]
 }</pre>
                 </div>
               </div>
@@ -671,43 +941,39 @@ Atau JSON:
     <div class="group-section">
       <div class="group-header">
         <h2 class="group-title">
-          service-controller <span class="group-desc">: Public Services RAG Controller</span>
+          service-controller <span class="group-desc">: Public Services RAG Directory</span>
         </h2>
-        <div class="group-actions">
-          <span onclick="toggleGroup('service')">Show/Hide</span> | 
-          <span onclick="toggleGroup('service')">List Operations</span> | 
-          <span onclick="toggleGroup('service')">Expand Operations</span>
-        </div>
       </div>
 
       <div id="group-service">
         <!-- POST /api/services -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-post" data-bs-toggle="collapse" data-bs-target="#collapse-service-post" aria-expanded="false">
             <span class="api-method">POST</span>
             <span class="api-path">/api/services</span>
             <span class="api-operation">createServiceController</span>
+            <span class="auth-badge">RBAC REQUIRED</span>
           </div>
           <div class="collapse" id="collapse-service-post">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Menambahkan data layanan publik. Server otomatis memproses text embedding untuk pgvector.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Menambahkan data layanan publik RAG (otomatis text-embedding vektor).</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
                   <pre>{
-  "name": "Pendaftaran Layanan BPJS",
+  "name": "Layanan BPJS",
   "institution": "BPJS Kesehatan",
   "category": "Kesehatan",
-  "description": "Prosedur pendaftaran BPJS Mandiri...",
-  "requirements": ["KTP", "Kartu Keluarga"],
-  "procedures": ["Buka aplikasi Mobile JKN", "Pilih menu daftar"]
+  "description": "Pendaftaran...",
+  "requirements": ["KTP"],
+  "procedures": ["Daftar..."]
 }</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
   "id": "service-uuid",
-  "message": "Layanan publik berhasil ditambahkan dan di-index ke vektor."
+  "message": "Layanan publik berhasil ditambahkan."
 }</pre>
                 </div>
               </div>
@@ -716,7 +982,7 @@ Atau JSON:
         </div>
 
         <!-- GET /api/services -->
-        <div>
+        <div class="api-item">
           <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-service-get" aria-expanded="false">
             <span class="api-method">GET</span>
             <span class="api-path">/api/services</span>
@@ -724,50 +990,16 @@ Atau JSON:
           </div>
           <div class="collapse" id="collapse-service-get">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil daftar semua instansi panduan layanan publik yang tersimpan di Supabase.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil katalog daftar layanan RAG.</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Query Params:</span>
-                  <pre>?category=Kesehatan // opsional</pre>
+                  <pre>?category=Kesehatan</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
-  "services": [
-    {
-      "id": "service-uuid",
-      "name": "Pendaftaran Layanan BPJS",
-      "institution": "BPJS Kesehatan",
-      ...
-    }
-  ]
-}</pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- DELETE /api/services/:id -->
-        <div>
-          <div class="api-row api-row-delete" data-bs-toggle="collapse" data-bs-target="#collapse-service-delete" aria-expanded="false">
-            <span class="api-method">DELETE</span>
-            <span class="api-path">/api/services/:id</span>
-            <span class="api-operation">deleteServiceController</span>
-          </div>
-          <div class="collapse" id="collapse-service-delete">
-            <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Menghapus data panduan layanan publik serta embedding vektor keserupaannya dari Supabase.</p>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Params:</span>
-                  <pre>Path: id (string)</pre>
-                </div>
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
-                  <pre>{
-  "success": true,
-  "message": "Layanan publik berhasil dihapus."
+  "services": [...]
 }</pre>
                 </div>
               </div>
@@ -777,74 +1009,45 @@ Atau JSON:
       </div>
     </div>
 
-    <!-- Group 4: audit-controller -->
+    <!-- Group 4: admin-controller -->
     <div class="group-section">
       <div class="group-header">
         <h2 class="group-title">
-          audit-controller <span class="group-desc">: Admin Audit Logs Controller</span>
+          admin-controller <span class="group-desc">: Staff & Database Management</span>
         </h2>
-        <div class="group-actions">
-          <span onclick="toggleGroup('audit')">Show/Hide</span> | 
-          <span onclick="toggleGroup('audit')">List Operations</span> | 
-          <span onclick="toggleGroup('audit')">Expand Operations</span>
-        </div>
       </div>
 
-      <div id="group-audit">
-        <!-- GET /api/claims -->
-        <div>
-          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-audit-claims" aria-expanded="false">
-            <span class="api-method">GET</span>
-            <span class="api-path">/api/claims</span>
-            <span class="api-operation">getClaimsController</span>
+      <div id="group-admin">
+        <!-- POST /api/admin/create-user -->
+        <div class="api-item">
+          <div class="api-row api-row-post" data-bs-toggle="collapse" data-bs-target="#collapse-admin-create" aria-expanded="false">
+            <span class="api-method">POST</span>
+            <span class="api-path">/api/admin/create-user</span>
+            <span class="api-operation">createStaffUserController</span>
+            <span class="auth-badge">RBAC REQUIRED</span>
           </div>
-          <div class="collapse" id="collapse-audit-claims">
+          <div class="collapse" id="collapse-admin-create">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil log verifikasi klaim berita/hoaks warga guna keperluan audit admin.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Membuat akun staf/petugas baru (hanya boleh dibuat oleh superadmin).</p>
               <div class="row g-2">
                 <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Query Params:</span>
-                  <pre>?page=1&limit=20</pre>
-                </div>
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Body:</span>
                   <pre>{
-  "claims": [
-    {
-      "id": "claim-uuid",
-      "claim_text": "Pemerintah bagikan bansos...",
-      "is_credible": false,
-      ...
-    }
-  ],
-  "total": 5
+  "email": "petugas@komunitas.id",
+  "password": "kataSandiKuat",
+  "role": "petugas",
+  "nik": "16-digit-nik",
+  "nama_lengkap": "Alif",
+  "nama_panggilan": "Alif",
+  "tanggal_lahir": "2000-01-01",
+  "nomor_telepon": "+628..."
 }</pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- DELETE /api/claims/:id -->
-        <div>
-          <div class="api-row api-row-delete" data-bs-toggle="collapse" data-bs-target="#collapse-audit-claims-delete" aria-expanded="false">
-            <span class="api-method">DELETE</span>
-            <span class="api-path">/api/claims/:id</span>
-            <span class="api-operation">deleteClaimController</span>
-          </div>
-          <div class="collapse" id="collapse-audit-claims-delete">
-            <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Menghapus logs riwayat cek fakta tertentu dari database.</p>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Params:</span>
-                  <pre>Path: id (string)</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
   "success": true,
-  "message": "Data verifikasi klaim berhasil dihapus."
+  "message": "User baru berhasil dibuat."
 }</pre>
                 </div>
               </div>
@@ -852,119 +1055,27 @@ Atau JSON:
           </div>
         </div>
 
-        <!-- GET /api/summaries -->
-        <div>
-          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-audit-summaries" aria-expanded="false">
+        <!-- GET /api/admin/hoax -->
+        <div class="api-item">
+          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-admin-hoax" aria-expanded="false">
             <span class="api-method">GET</span>
-            <span class="api-path">/api/summaries</span>
-            <span class="api-operation">getSummariesController</span>
+            <span class="api-path">/api/admin/hoax</span>
+            <span class="api-operation">getHoaxesController</span>
+            <span class="auth-badge">RBAC REQUIRED</span>
           </div>
-          <div class="collapse" id="collapse-audit-summaries">
+          <div class="collapse" id="collapse-admin-hoax">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil riwayat log ringkasan berkas birokrasi warga yang tersimpan di Supabase.</p>
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil isi database klarifikasi kata kunci hoaks WhatsApp Bot.</p>
               <div class="row g-2">
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Query Params:</span>
-                  <pre>?page=1&limit=20</pre>
+                  <pre>?search=keyword&page=1</pre>
                 </div>
                 <div class="col-md-6">
                   <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
                   <pre>{
-  "summaries": [
-    {
-      "id": "summary-uuid",
-      "input_text": "Salinan aturan birokrasi...",
-      "summary_text": "1. Poin Ringkasan...",
-      ...
-    }
-  ],
-  "total": 3
-}</pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- DELETE /api/summaries/:id -->
-        <div>
-          <div class="api-row api-row-delete" data-bs-toggle="collapse" data-bs-target="#collapse-audit-summaries-delete" aria-expanded="false">
-            <span class="api-method">DELETE</span>
-            <span class="api-path">/api/summaries/:id</span>
-            <span class="api-operation">deleteSummaryController</span>
-          </div>
-          <div class="collapse" id="collapse-audit-summaries-delete">
-            <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Menghapus logs data ringkasan birokrasi warga tertentu.</p>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Params:</span>
-                  <pre>Path: id (string)</pre>
-                </div>
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
-                  <pre>{
-  "success": true,
-  "message": "Data ringkasan dokumen berhasil dihapus."
-}</pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- GET /api/histories -->
-        <div>
-          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-audit-histories" aria-expanded="false">
-            <span class="api-method">GET</span>
-            <span class="api-path">/api/histories</span>
-            <span class="api-operation">getChatHistoriesController</span>
-          </div>
-          <div class="collapse" id="collapse-audit-histories">
-            <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengambil semua log identitas sesi obrolan (chat history sessionId) warga untuk audit admin.</p>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Query Params:</span>
-                  <pre>?page=1&limit=20</pre>
-                </div>
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
-                  <pre>{
-  "histories": [
-    {
-      "session_id": "session-uuid",
-      "created_at": "2026-06-23T12:00:00Z"
-    }
-  ],
-  "total": 10
-}</pre>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- DELETE /api/histories/:sessionId -->
-        <div>
-          <div class="api-row api-row-delete" data-bs-toggle="collapse" data-bs-target="#collapse-audit-histories-delete" aria-expanded="false">
-            <span class="api-method">DELETE</span>
-            <span class="api-path">/api/histories/:sessionId</span>
-            <span class="api-operation">deleteHistoryController</span>
-          </div>
-          <div class="collapse" id="collapse-audit-histories-delete">
-            <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Menghapus data sesi percakapan chat warga beserta seluruh pesan di dalamnya dari database.</p>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request Params:</span>
-                  <pre>Path: sessionId (string)</pre>
-                </div>
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
-                  <pre>{
-  "success": true,
-  "message": "Riwayat chat berhasil dihapus."
+  "hoaxes": [...],
+  "total": 12
 }</pre>
                 </div>
               </div>
@@ -974,45 +1085,75 @@ Atau JSON:
       </div>
     </div>
 
-    <!-- Group 5: utility-controller -->
+    <!-- Group 5: websocket-controller -->
     <div class="group-section">
       <div class="group-header">
         <h2 class="group-title">
-          utility-controller <span class="group-desc">: Health & Utility Controller</span>
+          websocket-controller <span class="group-desc">: Real-time Room Connection</span>
         </h2>
-        <div class="group-actions">
-          <span onclick="toggleGroup('utility')">Show/Hide</span> | 
-          <span onclick="toggleGroup('utility')">List Operations</span> | 
-          <span onclick="toggleGroup('utility')">Expand Operations</span>
+      </div>
+
+      <div id="group-ws">
+        <!-- GET /api/ws/chat -->
+        <div class="api-item">
+          <div class="api-row api-row-ws" data-bs-toggle="collapse" data-bs-target="#collapse-ws" aria-expanded="false">
+            <span class="api-method">WS</span>
+            <span class="api-path">/api/ws/chat</span>
+            <span class="api-operation">upgradeWebSocket</span>
+          </div>
+          <div class="collapse" id="collapse-ws">
+            <div class="api-details">
+              <p class="mb-2"><strong>Deskripsi:</strong> Saluran koneksi WebSocket real-time aduan warga.</p>
+              <div class="row g-2">
+                <div class="col-md-6">
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Query Connection Params:</span>
+                  <pre>reportId=aduan-uuid
+userId=warga-atau-petugas-uuid
+role=user|petugas
+name=Budi</pre>
+                </div>
+                <div class="col-md-6">
+                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Message Format (JSON):</span>
+                  <pre>{
+  "type": "message",
+  "text": "Apakah aduan saya sudah dibaca?",
+  "senderId": "user-uuid",
+  "senderName": "Budi",
+  "senderType": "user"
+}</pre>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Group 6: utility-controller -->
+    <div class="group-section">
+      <div class="group-header">
+        <h2 class="group-title">
+          utility-controller <span class="group-desc">: Health Check</span>
+        </h2>
       </div>
 
       <div id="group-utility">
         <!-- GET /health -->
-        <div>
-          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-utility-health" aria-expanded="false">
+        <div class="api-item">
+          <div class="api-row api-row-get" data-bs-toggle="collapse" data-bs-target="#collapse-health" aria-expanded="false">
             <span class="api-method">GET</span>
             <span class="api-path">/health</span>
             <span class="api-operation">healthCheck</span>
           </div>
-          <div class="collapse" id="collapse-utility-health">
+          <div class="collapse" id="collapse-health">
             <div class="api-details">
-              <p class="mb-2"><strong>Deskripsi:</strong> Mengecek status keaktifan dan runtime server backend.</p>
-              <div class="row g-2">
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Request:</span>
-                  <pre>None</pre>
-                </div>
-                <div class="col-md-6">
-                  <span class="d-block fw-bold mb-1" style="font-size: 11px;">Response (200 OK):</span>
-                  <pre>{
+              <p class="mb-2"><strong>Deskripsi:</strong> Mengecek status runtime server.</p>
+              <pre>{
   "status": "ok",
-  "timestamp": "2026-06-23T12:00:00.000Z",
-  "uptime": 120.45,
+  "timestamp": "2026-06-30T12:00:00.000Z",
+  "uptime": 12.5,
   "version": "1.0.0"
 }</pre>
-                </div>
-              </div>
             </div>
           </div>
         </div>
@@ -1020,20 +1161,23 @@ Atau JSON:
     </div>
 
     <!-- Footer info -->
-    <div class="footer-info">
-      [ BASE URL: / , API VERSION: 1.0 ]
+    <div class="footer-info text-center">
+      KOMUNITAS API ENGINE &bull; VERSION 1.0.2
     </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   <script>
-    function toggleGroup(groupId) {
-      const el = document.getElementById('group-' + groupId);
-      if (el) {
-        if (el.style.display === 'none') {
-          el.style.display = 'block';
+    function filterEndpoints() {
+      const searchVal = document.getElementById('searchBox').value.toLowerCase();
+      const items = document.getElementsByClassName('api-item');
+      for (let item of items) {
+        const path = item.querySelector('.api-path').textContent.toLowerCase();
+        const desc = item.querySelector('.api-details')?.textContent.toLowerCase() || '';
+        if (path.includes(searchVal) || desc.includes(searchVal)) {
+          item.style.display = 'block';
         } else {
-          el.style.display = 'none';
+          item.style.display = 'none';
         }
       }
     }
@@ -1070,22 +1214,23 @@ app.onError((err, c) => {
 
 const port = parseInt(process.env.PORT || '3000');
 
-console.log('=' .repeat(60));
-console.log('🚀 KOMUNITAS AI API Server');
-console.log('=' .repeat(60));
-console.log(`📡 Server running on: http://localhost:${port}`);
-console.log(`🔍 Health check: http://localhost:${port}/health`);
-console.log(`📚 API documentation: http://localhost:${port}/`);
-console.log('=' .repeat(60));
-console.log(`✨ Environment: ${process.env.NODE_ENV || 'development'}`);
-console.log(`🤖 AI Model: ${process.env.DEFAULT_MODEL || 'google/gemini-2.5-flash'}`);
-console.log(`🧠 Embedding Model: ${process.env.EMBEDDING_MODEL || 'openai/text-embedding-3-small'}`);
-console.log(`🔍 Search Grounding: ${process.env.SERPER_API_KEY ? 'Serper.dev Enabled' : 'Disabled (LLM Fallback)'}`);
-console.log(`💾 Database: ${process.env.SUPABASE_URL ? 'Connected' : 'Disconnected'}`);
-console.log('=' .repeat(60));
+console.log('============================================================');
+console.log('KOMUNITAS AI API Server');
+console.log('============================================================');
+console.log(`Server running on: http://localhost:${port}`);
+console.log(`Health check: http://localhost:${port}/health`);
+console.log(`API documentation: http://localhost:${port}/`);
+console.log('============================================================');
+console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+console.log(`AI Model: ${process.env.DEFAULT_MODEL || 'google/gemini-2.5-flash'}`);
+console.log(`Embedding Model: ${process.env.EMBEDDING_MODEL || 'openai/text-embedding-3-small'}`);
+console.log(`Search Grounding: ${process.env.SERPER_API_KEY ? 'Serper.dev Enabled' : 'Disabled (LLM Fallback)'}`);
+console.log(`Database: ${process.env.SUPABASE_URL ? 'Connected' : 'Disconnected'}`);
+console.log('============================================================');
 
 export default {
   port,
   hostname: '0.0.0.0',
   fetch: app.fetch,
+  websocket,
 };

@@ -64,6 +64,9 @@ export const reportSchema = z.object({
   latitude: z.number({ message: 'Koordinat lokasi GPS (latitude) wajib disertakan' }),
   longitude: z.number({ message: 'Koordinat lokasi GPS (longitude) wajib disertakan' }),
   image: z.string().optional(),
+  province: z.string().optional(),
+  city: z.string().optional(),
+  district: z.string().optional(),
 });
 
 // --- Controllers ---
@@ -775,12 +778,39 @@ export const createReportController = async (c: Context) => {
   try {
     const body = await c.req.json();
     const validated = reportSchema.parse(body);
+    const user = c.get('user');
+    const userId = user ? user.id : null;
 
     logger.info('📋 Citizen report request received:', {
       reporterName: validated.reporterName,
       category: validated.category,
       hasGPS: validated.latitude !== undefined && validated.longitude !== undefined,
+      userId,
     });
+
+    // 1. Pembatasan Pengaduan Guest & Tamu (Max 2x Sehari)
+    if (!userId) {
+      // User is guest. Limit check: max 2 reports per day based on reporter_contact
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const { data: guestReports, error: countError } = await supabase
+        .from('citizen_reports')
+        .select('id')
+        .is('user_id', null)
+        .eq('reporter_contact', validated.reporterContact)
+        .gte('created_at', today.toISOString());
+
+      if (countError) {
+        logger.error('❌ Failed to check guest report limit:', countError);
+      } else if (guestReports && guestReports.length >= 2) {
+        logger.warn('🚫 Guest limit reached for contact:', validated.reporterContact);
+        return c.json({
+          error: 'GuestLimitReached',
+          message: 'Batas laporan tanpa login adalah 2 kali sehari. Silakan masuk (login) terlebih dahulu untuk membuat laporan lebih lanjut.'
+        }, 429);
+      }
+    }
 
     // Pastikan session_id ada di tabel chat_history terlebih dahulu untuk menghindari error foreign key (23503)
     if (validated.sessionId) {
@@ -804,6 +834,10 @@ export const createReportController = async (c: Context) => {
         latitude: validated.latitude,
         longitude: validated.longitude,
         image_url: validated.image || null,
+        province: validated.province || null,
+        city: validated.city || null,
+        district: validated.district || null,
+        user_id: userId,
       })
       .select('id')
       .single();
@@ -1267,3 +1301,65 @@ export const extractFileController = async (c: Context) => {
   }
 };
 
+
+
+/**
+ * Get Reports Statistics Controller - Statistik daerah/wilayah aduan untuk admin
+ * GET /api/reports/statistics
+ */
+export const getReportsStatisticsController = async (c: Context) => {
+  try {
+    logger.info('📊 Admin: Get reports statistics');
+    const { data: reports, error } = await supabase
+      .from('citizen_reports')
+      .select('province, city, district, category, status');
+
+    if (error) throw error;
+
+    const provinceCounts: Record<string, number> = {};
+    const cityCounts: Record<string, number> = {};
+    const categoryCounts: Record<string, number> = {};
+
+    reports?.forEach((r: any) => {
+      if (r.province) provinceCounts[r.province] = (provinceCounts[r.province] || 0) + 1;
+      if (r.city) cityCounts[r.city] = (cityCounts[r.city] || 0) + 1;
+      if (r.category) categoryCounts[r.category] = (categoryCounts[r.category] || 0) + 1;
+    });
+
+    return c.json({
+      success: true,
+      provinces: provinceCounts,
+      cities: cityCounts,
+      categories: categoryCounts,
+      total: reports?.length || 0,
+    });
+  } catch (error: any) {
+    logger.error('❌ Get reports statistics error:', error);
+    return c.json({ error: 'Gagal mengambil statistik laporan', message: error.message }, 500);
+  }
+};
+
+/**
+ * Get Active Chats Controller - Mengambil daftar laporan/aduan warga yang sedang aktif (Menunggu / Diproses)
+ * GET /api/chat/active
+ */
+export const getActiveChatsController = async (c: Context) => {
+  try {
+    logger.info('💬 Admin/Petugas: Get active chats list');
+    const { data: reports, error } = await supabase
+      .from('citizen_reports')
+      .select('*')
+      .in('status', ['Menunggu', 'Diproses'])
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return c.json({
+      success: true,
+      data: reports || [],
+    });
+  } catch (error: any) {
+    logger.error('❌ Get active chats list error:', error);
+    return c.json({ error: 'Gagal mengambil daftar percakapan aktif', message: error.message }, 500);
+  }
+};

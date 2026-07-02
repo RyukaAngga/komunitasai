@@ -13,6 +13,7 @@ import { chatService } from '@/services/api'
 import { useChatStore } from '@/store/chatStore'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
+import { useAuthStore } from '@/store/authStore'
 import Footer4Col from '@/components/ui/footer-column'
 
 // ─── Shared animation presets ────────────────────────────────────────────────
@@ -222,6 +223,14 @@ export function HomePage() {
   const { createSession, setCurrentSession } = useChatStore()
   const navigate = useNavigate()
   const { toast } = useToast()
+
+  const { isAuthenticated, user, logout, checkMe } = useAuthStore()
+
+  useEffect(() => {
+    if (isAuthenticated && !user) {
+      checkMe().catch(err => console.error('Sesi gagal dimuat:', err))
+    }
+  }, [isAuthenticated, user, checkMe])
 
   useEffect(() => {
     const handleScroll = () => {
@@ -454,20 +463,20 @@ export function HomePage() {
           <img src="/assets/logo/komunitas.png" alt="KOMUNITAS Logo" className="h-7 w-7 object-contain rounded-md" />
           <span className={cn(
             "font-semibold text-[15px] tracking-[-0.02em] transition-colors duration-300",
-            isScrolled ? "text-zinc-100" : "text-white"
+            isScrolled ? "text-zinc-100" : "text-zinc-950"
           )}>KOMUNITAS</span>
         </div>
 
-        {/* Nav */}
-        <nav className="hidden md:flex items-center gap-7">
-          {['Layanan', 'Verifikasi', 'Tentang'].map((item) => (
+        {/* Nav - Center absolutely to prevent shifting */}
+        <nav className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-7">
+          {['Layanan', 'Verifikasi', 'Semua Aduan', 'Tentang'].map((item) => (
             <button
               key={item}
               className={cn(
-                "text-[13px] transition-colors duration-300 tracking-[-0.01em]",
+                "text-[13px] transition-colors duration-300 tracking-[-0.01em] cursor-pointer",
                 isScrolled 
                   ? "text-zinc-400 hover:text-zinc-100" 
-                  : "text-black hover:text-zinc-700 font-semibold"
+                  : "text-zinc-800 hover:text-zinc-950 font-semibold"
               )}
               onClick={() => {
                 if (item === 'Verifikasi') {
@@ -476,6 +485,8 @@ export function HomePage() {
                   navigate('/about')
                 } else if (item === 'Layanan') {
                   document.getElementById('features-section')?.scrollIntoView({ behavior: 'smooth' })
+                } else if (item === 'Semua Aduan') {
+                  navigate('/all-reports')
                 }
               }}
             >
@@ -484,17 +495,73 @@ export function HomePage() {
           ))}
         </nav>
 
-        <Button
-          onClick={handleStartChat}
-          className={cn(
-            "h-8 px-4 text-[12px] font-medium rounded-md tracking-[-0.01em] transition-all active:scale-[0.97] shadow-none",
-            isScrolled
-              ? "bg-white hover:bg-zinc-100 text-zinc-900"
-              : "bg-black hover:bg-zinc-900 text-white border border-zinc-800/30"
+        <div className="flex items-center gap-3">
+          {isAuthenticated && user ? (
+            <div className="flex items-center gap-3">
+              {/* User profile info */}
+              <div className="hidden md:flex flex-col items-end text-right select-none">
+                <span className={cn(
+                  "text-[12px] font-bold tracking-tight",
+                  isScrolled ? "text-zinc-100" : "text-zinc-950"
+                )}>{user.nama_panggilan || user.nama_lengkap}</span>
+                <span className="text-[9px] uppercase font-mono text-zinc-500 font-semibold tracking-wider leading-none mt-0.5">[{user.role}]</span>
+              </div>
+              
+              {/* Logout Button */}
+              <button
+                onClick={() => {
+                  logout()
+                  toast({ title: 'Sesi Berakhir', description: 'Anda telah berhasil keluar dari sistem.', type: 'info' })
+                }}
+                className={cn(
+                  "h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border transition-all duration-300 active:scale-[0.97] cursor-pointer",
+                  isScrolled
+                    ? "bg-zinc-900 hover:bg-zinc-850 text-zinc-200 border-zinc-800"
+                    : "bg-transparent hover:bg-zinc-900 text-zinc-900 hover:text-white border-zinc-900/30 hover:border-zinc-900"
+                )}
+              >
+                Keluar
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/login')}
+                className={cn(
+                  "h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border transition-all duration-300 active:scale-[0.97] cursor-pointer",
+                  isScrolled
+                    ? "bg-zinc-900 hover:bg-zinc-850 text-zinc-200 border-zinc-800"
+                    : "bg-transparent hover:bg-zinc-900 text-zinc-900 hover:text-white border-zinc-900/30 hover:border-zinc-900"
+                )}
+              >
+                Masuk
+              </button>
+              <button
+                onClick={() => navigate('/register')}
+                className={cn(
+                  "h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border transition-all duration-300 active:scale-[0.97] cursor-pointer",
+                  isScrolled
+                    ? "bg-white hover:bg-zinc-100 text-zinc-950 border-white"
+                    : "bg-transparent hover:bg-zinc-900 text-zinc-900 hover:text-white border-zinc-900/30 hover:border-zinc-900"
+                )}
+              >
+                Daftar
+              </button>
+            </div>
           )}
-        >
-          Mulai Percakapan
-        </Button>
+          
+          <Button
+            onClick={handleStartChat}
+            className={cn(
+              "h-8 px-4 text-[12px] font-medium rounded-md tracking-[-0.01em] transition-all duration-300 active:scale-[0.97] shadow-none cursor-pointer",
+              isScrolled
+                ? "bg-white hover:bg-zinc-100 text-zinc-950 border border-transparent"
+                : "bg-transparent hover:bg-zinc-900 text-zinc-900 hover:text-white border border-zinc-900/30 hover:border-zinc-900"
+            )}
+          >
+            Mulai Percakapan
+          </Button>
+        </div>
       </motion.header>
 
       {/* ══ MAIN ═════════════════════════════════════════════════════════════ */}

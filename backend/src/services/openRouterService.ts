@@ -435,7 +435,7 @@ BATASAN PANJANG (SANGAT PENTING):
 };
 
 /**
- * Membuat system prompt untuk asisten AI SahabatLKS
+ * Membuat system prompt untuk asisten AI KOMUNITAS
  * @returns string - System prompt lengkap
  */
 export const createSystemPrompt = (): string => {

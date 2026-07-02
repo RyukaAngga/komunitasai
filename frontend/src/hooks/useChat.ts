@@ -34,6 +34,12 @@ export function useChat() {
     setSearchPhase(null)
     setSearchResults([])
 
+    // Ambil riwayat percakapan yang ada sebelum menambahkan pesan baru (untuk stateless guest mode)
+    const previousHistory = messages.map(m => ({
+      role: m.role,
+      content: m.content,
+    }))
+
     const userMessage: Message = {
       id: generateId(),
       role: 'user',
@@ -63,16 +69,23 @@ export function useChat() {
     setStreamingMessageId(assistantMessageId)
 
     try {
+      const token = localStorage.getItem('komunitas_access_token')
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+
       const response = await fetch(`${API_BASE_URL}/api/chat/stream`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers,
         body: JSON.stringify({
           message: content.trim(),
           sessionId,
           image: image?.base64,
           mimeType: image?.mimeType,
+          history: !token ? previousHistory : undefined,
         }),
       })
 
@@ -192,6 +205,7 @@ export function useChat() {
     summarizeDocument,
     clearError,
     currentSessionId,
+    sessionId: currentSessionId,
     sessions,
   }
 }

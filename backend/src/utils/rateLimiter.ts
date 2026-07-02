@@ -11,7 +11,7 @@ const rateLimitMap = new Map<string, number[]>();
  */
 export const rateLimiter = (limit: number, windowMs: number) => {
   return async (c: Context, next: Next) => {
-    const ip = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || 'unknown-ip';
+    const ip = c.req.header('x-forwarded-for') || c.req.header('x-real-ip') || '127.0.0.1';
     const now = Date.now();
 
     let clientRequests = rateLimitMap.get(ip) || [];
