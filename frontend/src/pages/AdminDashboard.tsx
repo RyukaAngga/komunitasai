@@ -24,6 +24,7 @@ import {
 } from '@/services/api'
 import { authService } from '@/services/auth'
 import { useAuthStore } from '@/store/authStore'
+import { ReportMap } from '@/components/admin/ReportMap'
 import { cn } from '@/lib/utils'
 
 // ─── Animation presets ──────────────────────────────────────────────────────
@@ -1726,6 +1727,19 @@ export function AdminDashboard() {
       })
       
       setGeoStats({ provinces, cities, districts })
+
+      // Load regional statistics from backend and format as array
+      try {
+        const regData = await adminService.getReportsStatistics()
+        if (regData) {
+          const formattedProvinces = Object.entries(regData.provinces || {}).map(([name, total]) => ({ name, total }))
+          const formattedCities = Object.entries(regData.cities || {}).map(([name, total]) => ({ name, total }))
+          const formattedDistricts = Object.entries(regData.districts || {}).map(([name, total]) => ({ name, total }))
+          setRegionalStats({ provinces: formattedProvinces, cities: formattedCities, districts: formattedDistricts })
+        }
+      } catch (err) {
+        console.error('Failed to load regional stats:', err)
+      }
     } catch {
       // Stats remain fallback
     }
@@ -2074,6 +2088,153 @@ export function AdminDashboard() {
     return groups
   }, [filteredReports, groupBy])
 
+  // Unique provinces, cities, districts from allReports for filter options
+  const uniqueProvinces = useMemo(() => {
+    const set = new Set<string>()
+    allReports.forEach(r => { if (r.province) set.add(r.province) })
+    return Array.from(set).sort()
+  }, [allReports])
+
+  const uniqueCities = useMemo(() => {
+    const set = new Set<string>()
+    allReports.forEach(r => {
+      if (r.city && (reportFilterProvince === 'all' || r.province === reportFilterProvince)) {
+        set.add(r.city)
+      }
+    })
+    return Array.from(set).sort()
+  }, [allReports, reportFilterProvince])
+
+  const uniqueDistricts = useMemo(() => {
+    const set = new Set<string>()
+    allReports.forEach(r => {
+      if (r.district && (reportFilterCity === 'all' || r.city === reportFilterCity)) {
+        set.add(r.district)
+      }
+    })
+    return Array.from(set).sort()
+  }, [allReports, reportFilterCity])
+
+  // Unique provinces, cities, districts from activeChats for filter options
+  const uniqueChatProvinces = useMemo(() => {
+    const set = new Set<string>()
+    activeChats.forEach((c: any) => { if (c.province) set.add(c.province) })
+    return Array.from(set).sort()
+  }, [activeChats])
+
+  const uniqueChatCities = useMemo(() => {
+    const set = new Set<string>()
+    activeChats.forEach((c: any) => {
+      if (c.city && (chatFilterProvince === 'all' || c.province === chatFilterProvince)) {
+        set.add(c.city)
+      }
+    })
+    return Array.from(set).sort()
+  }, [activeChats, chatFilterProvince])
+
+  const uniqueChatDistricts = useMemo(() => {
+    const set = new Set<string>()
+    activeChats.forEach((c: any) => {
+      if (c.district && (chatFilterCity === 'all' || c.city === chatFilterCity)) {
+        set.add(c.district)
+      }
+    })
+    return Array.from(set).sort()
+  }, [activeChats, chatFilterCity])
+
+  const filteredActiveChats = useMemo(() => {
+    return activeChats.filter((chat: any) => {
+      const matchProv = chatFilterProvince === 'all' || chat.province === chatFilterProvince
+      const matchCity = chatFilterCity === 'all' || chat.city === chatFilterCity
+      const matchDist = chatFilterDistrict === 'all' || chat.district === chatFilterDistrict
+      return matchProv && matchCity && matchDist
+    })
+  }, [activeChats, chatFilterProvince, chatFilterCity, chatFilterDistrict])
+
+  const renderTableHeaders = () => (
+    <thead>
+      <tr className="border-b border-zinc-800 bg-zinc-950/50">
+        {[
+          { key: 'id', width: 'w-[100px] min-w-[100px]', className: 'hidden xl:table-cell' },
+          { key: 'session_id', width: 'w-[100px] min-w-[100px]', className: 'hidden xl:table-cell' },
+          { key: 'reporter_name', width: 'w-[160px] min-w-[160px]', className: '' },
+          { key: 'reporter_contact', width: 'w-[160px] min-w-[160px]', className: 'hidden md:table-cell' },
+          { key: 'category', width: 'w-[140px] min-w-[140px]', className: '' },
+          { key: 'description', width: 'w-[220px] min-w-[220px]', className: 'hidden sm:table-cell' },
+          { key: 'status', width: 'w-[120px] min-w-[120px]', className: '' },
+          { key: 'admin_note', width: 'w-[150px] min-w-[150px]', className: 'hidden lg:table-cell' },
+          { key: 'created_at', width: 'w-[120px] min-w-[120px]', className: 'hidden md:table-cell' },
+          { key: 'Aksi', width: 'w-[130px] min-w-[130px]', className: '' }
+        ].map(h => (
+          <th key={h.key} className={cn("px-4 py-3 font-semibold text-zinc-400 uppercase tracking-wider text-[10px] whitespace-nowrap", h.width, h.className)}>
+            {h.key}
+          </th>
+        ))}
+      </tr>
+    </thead>
+  )
+
+  const renderReportRow = (r: CitizenReport) => (
+    <tr key={r.id} className="border-b border-zinc-800/60 hover:bg-zinc-800/10 transition">
+      <td className="px-4 py-3.5 min-w-[100px] max-w-[100px] hidden xl:table-cell">
+        <div className="truncate font-mono text-[10px] text-zinc-500 select-all" title={r.id}>
+          {r.id}
+        </div>
+      </td>
+      <td className="px-4 py-3.5 min-w-[100px] max-w-[100px] hidden xl:table-cell">
+        <div className="truncate font-mono text-[10px] text-zinc-500 select-all" title={r.session_id}>
+          {r.session_id || '-'}
+        </div>
+      </td>
+      <td className="px-4 py-3.5 font-semibold text-zinc-200 min-w-[160px] whitespace-nowrap">{r.reporter_name}</td>
+      <td className="px-4 py-3.5 text-zinc-400 min-w-[160px] whitespace-nowrap hidden md:table-cell">{r.reporter_contact}</td>
+      <td className="px-4 py-3.5 min-w-[140px] whitespace-nowrap">
+        <span className="inline-flex items-center rounded-full bg-zinc-950 border border-zinc-800 px-2.5 py-0.5 text-[10px] text-zinc-300 font-semibold whitespace-nowrap">
+          {CATEGORY_LABELS[r.category] || r.category}
+        </span>
+      </td>
+      <td className="px-4 py-3.5 min-w-[220px] max-w-xs hidden sm:table-cell">
+        <div className="flex flex-col gap-0.5">
+          {r.description.startsWith('[📍 LOKASI GPS KOORDINAT:') && (
+            <span className="inline-flex items-center gap-0.5 text-[9px] text-rose-400 font-bold whitespace-nowrap">
+              <MapPin className="h-2.5 w-2.5" /> GPS Terlampir
+            </span>
+          )}
+          <div className="truncate text-zinc-400" title={r.description.replace(/^\[📍 LOKASI GPS KOORDINAT:[^\]]+\]\s*/, '')}>
+            {r.description.replace(/^\[📍 LOKASI GPS KOORDINAT:[^\]]+\]\s*/, '')}
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-3.5 min-w-[120px]">
+        <StatusBadge status={r.status as keyof typeof STATUS_CONFIG} />
+      </td>
+      <td className="px-4 py-3.5 text-zinc-500 italic min-w-[150px] max-w-[150px] hidden lg:table-cell">
+        <div className="truncate" title={r.admin_note}>
+          {r.admin_note || '-'}
+        </div>
+      </td>
+      <td className="px-4 py-3.5 text-zinc-400 min-w-[120px] whitespace-nowrap hidden md:table-cell">
+        {new Date(r.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
+      </td>
+      <td className="px-4 py-3.5 min-w-[130px]">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setSelectedReport(r)}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition shadow-sm active:scale-95"
+            title="Lihat Detail"
+          >
+            <Eye className="h-3.5 w-3.5" />
+          </button>
+          <StatusDropdown
+            current={r.status}
+            reportId={r.id}
+            onUpdate={handleStatusUpdate}
+          />
+        </div>
+      </td>
+    </tr>
+  )
+
   const filteredServices = serviceSearch.trim()
     ? services.filter(s =>
         s.name.toLowerCase().includes(serviceSearch.toLowerCase()) ||
@@ -2292,6 +2453,19 @@ export function AdminDashboard() {
                       </div>
                     </div>
                   )}
+
+                  {/* Charts Grid */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in duration-300">
+                    <div className="lg:col-span-2">
+                      <InteractiveTrendChart reports={allReports} />
+                    </div>
+                    <div>
+                      <StatusDonutChart statusCounts={stats?.statusCounts || { Menunggu: 0, Diproses: 0, Selesai: 0, Ditolak: 0 }} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 animate-in fade-in duration-300">
+                    <CategoryBarChart reports={allReports} />
+                  </div>
 
                   {/* Regional Statistics Visualizer */}
                   {regionalStats && (
@@ -2515,141 +2689,163 @@ export function AdminDashboard() {
 
               {/* ─── TAB CONTENT: CITIZEN REPORTS ────────────────────────── */}
               {activeTab === 'reports' && (
-                <div className="space-y-4 animate-in fade-in duration-200">
+                <div className="space-y-6 animate-in fade-in duration-200">
+                  {/* Full-width GIS Map Panel (separated but on the same page) */}
+                  <div className="border border-zinc-800 bg-zinc-900 rounded-lg p-5 space-y-3.5 flex flex-col">
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <div>
+                        <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-wider flex items-center gap-1.5">
+                          <MapPin className="h-4 w-4 text-rose-500 animate-pulse" /> Peta Live GIS Aduan Warga
+                        </h3>
+                        <p className="text-[10px] text-zinc-500 mt-0.5">Sebaran lokasi laporan warga yang terlampir koordinat GPS</p>
+                      </div>
+                    </div>
+                    {/* Map Box */}
+                    <div className="h-[360px] w-full rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden relative">
+                      <ReportMap 
+                        reports={filteredReports} 
+                        onSelectReport={(r) => setSelectedReport(r)} 
+                      />
+                    </div>
+                  </div>
+
                   {/* Table Toolbar */}
-                  <div className="flex flex-col gap-2 border border-zinc-800 bg-zinc-900 rounded-lg p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-col gap-2 border border-zinc-800 bg-zinc-900 rounded-lg p-4 xl:flex-row xl:items-center xl:justify-between">
                     <div className="flex items-center gap-2">
                       <FileText className="h-4 w-4 text-zinc-400" />
-                      <h2 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Tabel: citizen_reports</h2>
+                      <h2 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Laporan Warga</h2>
                       <span className="rounded-full bg-zinc-950 border border-zinc-800 px-2.5 py-0.5 text-[10px] text-zinc-400 font-bold">
                         {total} Baris
                       </span>
                     </div>
-                    <div className="flex flex-col gap-1.5 sm:flex-row">
+                    <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap items-center">
                       <div className="relative">
                         <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-zinc-500" />
                         <input
                           value={search}
                           onChange={e => setSearch(e.target.value)}
                           placeholder="Cari pelapor/masalah..."
-                          className="h-8 w-full rounded border border-zinc-800 bg-zinc-950 pl-8 pr-3 text-xs text-zinc-200 outline-none focus:border-zinc-700 sm:w-48 placeholder-zinc-500"
+                          className="h-8 w-full rounded border border-zinc-800 bg-zinc-950 pl-8 pr-3 text-xs text-zinc-200 outline-none focus:border-zinc-700 sm:w-40 placeholder-zinc-500"
                         />
                       </div>
-                      <div className="flex items-center gap-1.5 text-xs text-zinc-400">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-400">
                         <Filter className="h-3.5 w-3.5 text-zinc-500" />
+                        
+                        {/* Status Filter */}
                         <select
                           value={filterStatus}
                           onChange={e => { setFilterStatus(e.target.value); setPage(1); }}
-                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700"
+                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700 text-xs"
                         >
-                          <option value="all" className="bg-zinc-900 text-zinc-300">Semua Status</option>
-                          <option value="Menunggu" className="bg-zinc-900 text-zinc-300">Menunggu</option>
-                          <option value="Diproses" className="bg-zinc-900 text-zinc-300">Diproses</option>
-                          <option value="Selesai" className="bg-zinc-900 text-zinc-300">Selesai</option>
-                          <option value="Ditolak" className="bg-zinc-900 text-zinc-300">Ditolak</option>
+                          <option value="all">Semua Status</option>
+                          <option value="Menunggu">Menunggu</option>
+                          <option value="Diproses">Diproses</option>
+                          <option value="Selesai">Selesai</option>
+                          <option value="Ditolak">Ditolak</option>
+                        </select>
+
+                        {/* Province Filter */}
+                        <select
+                          value={reportFilterProvince}
+                          onChange={e => { setReportFilterProvince(e.target.value); setReportFilterCity('all'); setReportFilterDistrict('all'); setPage(1); }}
+                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700 text-xs"
+                        >
+                          <option value="all">Semua Provinsi</option>
+                          {uniqueProvinces.map(p => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+
+                        {/* City Filter */}
+                        <select
+                          value={reportFilterCity}
+                          onChange={e => { setReportFilterCity(e.target.value); setReportFilterDistrict('all'); setPage(1); }}
+                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700 text-xs"
+                        >
+                          <option value="all">Semua Kota</option>
+                          {uniqueCities.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+
+                        {/* District Filter */}
+                        <select
+                          value={reportFilterDistrict}
+                          onChange={e => { setReportFilterDistrict(e.target.value); setPage(1); }}
+                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700 text-xs"
+                        >
+                          <option value="all">Semua Kecamatan</option>
+                          {uniqueDistricts.map(d => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+
+                        {/* Grouping Selection */}
+                        <select
+                          value={groupBy}
+                          onChange={e => setGroupBy(e.target.value as any)}
+                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700 font-semibold text-indigo-400 text-xs"
+                        >
+                          <option value="none">Tanpa Grouping</option>
+                          <option value="province">Grup: Provinsi</option>
+                          <option value="city">Grup: Kota</option>
+                          <option value="district">Grup: Kecamatan</option>
                         </select>
                       </div>
                     </div>
                   </div>
 
-                  {/* Table Container */}
-                  <div className="overflow-hidden border border-zinc-800 bg-zinc-900 rounded-lg">
-                    {filteredReports.length === 0 ? (
-                      <div className="flex h-36 flex-col items-center justify-center gap-2">
-                        <FileText className="h-6 w-6 text-zinc-500" />
-                        <p className="text-xs text-zinc-500 italic">Tidak ada baris laporan ditemukan.</p>
+                  {/* Table / Grouped Rendering Container */}
+                  <div className="space-y-4">
+                    {groupBy === 'none' ? (
+                      <div className="overflow-hidden border border-zinc-800 bg-zinc-900 rounded-lg">
+                        {filteredReports.length === 0 ? (
+                          <div className="flex h-36 flex-col items-center justify-center gap-2">
+                            <FileText className="h-6 w-6 text-zinc-500" />
+                            <p className="text-xs text-zinc-500 italic">Tidak ada baris laporan ditemukan.</p>
+                          </div>
+                        ) : (
+                          <div className="overflow-x-auto w-full">
+                            <table className="w-full min-w-[480px] text-left text-xs border-collapse">
+                              {renderTableHeaders()}
+                              <tbody>
+                                {filteredReports.map(r => renderReportRow(r))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <div className="overflow-x-auto w-full">
-                        <table className="w-full min-w-[480px] text-left text-xs border-collapse">
-                          <thead>
-                            <tr className="border-b border-zinc-800 bg-zinc-950/50">
-                              {[
-                                { key: 'id', width: 'w-[100px] min-w-[100px]', className: 'hidden xl:table-cell' },
-                                { key: 'session_id', width: 'w-[100px] min-w-[100px]', className: 'hidden xl:table-cell' },
-                                { key: 'reporter_name', width: 'w-[160px] min-w-[160px]', className: '' },
-                                { key: 'reporter_contact', width: 'w-[160px] min-w-[160px]', className: 'hidden md:table-cell' },
-                                { key: 'category', width: 'w-[140px] min-w-[140px]', className: '' },
-                                { key: 'description', width: 'w-[220px] min-w-[220px]', className: 'hidden sm:table-cell' },
-                                { key: 'status', width: 'w-[120px] min-w-[120px]', className: '' },
-                                { key: 'admin_note', width: 'w-[150px] min-w-[150px]', className: 'hidden lg:table-cell' },
-                                { key: 'created_at', width: 'w-[120px] min-w-[120px]', className: 'hidden md:table-cell' },
-                                { key: 'Aksi', width: 'w-[130px] min-w-[130px]', className: '' }
-                              ].map(h => (
-                                <th key={h.key} className={cn("px-4 py-3 font-semibold text-zinc-400 uppercase tracking-wider text-[10px] whitespace-nowrap", h.width, h.className)}>
-                                  {h.key}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filteredReports.map(r => (
-                              <tr key={r.id} className="border-b border-zinc-800/60 hover:bg-zinc-800/10 transition">
-                                <td className="px-4 py-3.5 min-w-[100px] max-w-[100px] hidden xl:table-cell">
-                                  <div className="truncate font-mono text-[10px] text-zinc-500 select-all" title={r.id}>
-                                    {r.id}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3.5 min-w-[100px] max-w-[100px] hidden xl:table-cell">
-                                  <div className="truncate font-mono text-[10px] text-zinc-500 select-all" title={r.session_id}>
-                                    {r.session_id || '-'}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3.5 font-semibold text-zinc-200 min-w-[160px] whitespace-nowrap">{r.reporter_name}</td>
-                                <td className="px-4 py-3.5 text-zinc-400 min-w-[160px] whitespace-nowrap hidden md:table-cell">{r.reporter_contact}</td>
-                                <td className="px-4 py-3.5 min-w-[140px] whitespace-nowrap">
-                                  <span className="inline-flex items-center rounded-full bg-zinc-950 border border-zinc-800 px-2.5 py-0.5 text-[10px] text-zinc-300 font-semibold whitespace-nowrap">
-                                    {CATEGORY_LABELS[r.category] || r.category}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3.5 min-w-[220px] max-w-xs hidden sm:table-cell">
-                                  <div className="flex flex-col gap-0.5">
-                                    {r.description.startsWith('[📍 LOKASI GPS KOORDINAT:') && (
-                                      <span className="inline-flex items-center gap-0.5 text-[9px] text-rose-400 font-bold whitespace-nowrap">
-                                        <MapPin className="h-2.5 w-2.5" /> GPS Terlampir
-                                      </span>
-                                    )}
-                                    <div className="truncate text-zinc-400" title={r.description.replace(/^\[📍 LOKASI GPS KOORDINAT:[^\]]+\]\s*/, '')}>
-                                      {r.description.replace(/^\[📍 LOKASI GPS KOORDINAT:[^\]]+\]\s*/, '')}
-                                    </div>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3.5 min-w-[120px]">
-                                  <StatusBadge status={r.status as keyof typeof STATUS_CONFIG} />
-                                </td>
-                                <td className="px-4 py-3.5 text-zinc-500 italic min-w-[150px] max-w-[150px] hidden lg:table-cell">
-                                  <div className="truncate" title={r.admin_note}>
-                                    {r.admin_note || '-'}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3.5 text-zinc-400 min-w-[120px] whitespace-nowrap hidden md:table-cell">
-                                  {new Date(r.created_at).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: '2-digit' })}
-                                </td>
-                                <td className="px-4 py-3.5 min-w-[130px]">
-                                  <div className="flex items-center gap-1.5">
-                                    <button
-                                      onClick={() => setSelectedReport(r)}
-                                      className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition shadow-sm active:scale-95"
-                                    >
-                                      <Eye className="h-3.5 w-3.5" />
-                                    </button>
-                                    <StatusDropdown
-                                      current={r.status}
-                                      reportId={r.id}
-                                      onUpdate={handleStatusUpdate}
-                                    />
-                                  </div>
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
+                      // Grouped Render mode
+                      groupedReports && Object.entries(groupedReports).map(([groupName, groupList]) => (
+                        <div key={groupName} className="overflow-hidden border border-zinc-800 bg-zinc-900 rounded-lg">
+                          <div className="border-b border-zinc-800 bg-zinc-950/40 px-4 py-3 flex items-center justify-between">
+                            <h3 className="text-xs font-bold text-zinc-300 uppercase tracking-wider flex items-center gap-1.5">
+                              <MapPin className="h-3.5 w-3.5 text-zinc-500" /> {groupName}
+                            </h3>
+                            <span className="rounded-full bg-zinc-950 border border-zinc-800 px-2 py-0.5 text-[10px] font-mono text-zinc-400 font-bold">
+                              {groupList.length} Aduan
+                            </span>
+                          </div>
+                          {groupList.length === 0 ? (
+                            <p className="text-xs text-zinc-500 italic p-4 text-center">Tidak ada laporan</p>
+                          ) : (
+                            <div className="overflow-x-auto w-full">
+                              <table className="w-full min-w-[480px] text-left text-xs border-collapse">
+                                {renderTableHeaders()}
+                                <tbody>
+                                  {groupList.map(r => renderReportRow(r))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      ))
                     )}
 
-                    {/* Pagination */}
+                    {/* Pagination controls */}
                     {totalPages > 1 && (
-                      <div className="flex items-center justify-between border-t border-zinc-800 px-4 py-3.5 bg-zinc-950/20">
+                      <div className="flex items-center justify-between border border-zinc-800 bg-zinc-900 rounded-lg px-4 py-3.5">
                         <span className="text-[11px] text-zinc-500 font-semibold">
                           Halaman {page} dari {totalPages}
                         </span>
@@ -2657,7 +2853,7 @@ export function AdminDashboard() {
                           <button
                             onClick={() => setPage(p => Math.max(1, p - 1))}
                             disabled={page === 1}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 transition hover:bg-zinc-900 disabled:opacity-30"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 disabled:opacity-30 transition"
                           >
                             <ChevronLeft className="h-3.5 w-3.5 text-zinc-400" />
                           </button>
@@ -2669,7 +2865,7 @@ export function AdminDashboard() {
                                 'flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold border transition',
                                 page === p
                                   ? 'bg-zinc-100 text-zinc-955 border-zinc-100 shadow'
-                                  : 'border-zinc-800 bg-zinc-950 text-zinc-400 hover:bg-zinc-900'
+                                  : 'border-zinc-800 bg-zinc-955 text-zinc-400 hover:bg-zinc-900'
                               )}
                             >
                               {p}
@@ -2678,7 +2874,7 @@ export function AdminDashboard() {
                           <button
                             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                             disabled={page === totalPages}
-                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-955 transition hover:bg-zinc-900 disabled:opacity-30"
+                            className="flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 disabled:opacity-30 transition"
                           >
                             <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
                           </button>
@@ -3242,40 +3438,100 @@ export function AdminDashboard() {
 
               {/* ─── TAB CONTENT: PERCAKAPAN AKTIF ───────────────────────────── */}
               {activeTab === 'percakapan' && (
-                <div className="space-y-4 animate-in fade-in duration-200">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-zinc-800 bg-zinc-900 rounded-lg p-4">
+                <div className="space-y-6 animate-in fade-in duration-200">
+                  {/* Full-width GIS Map Panel for Active Chats */}
+                  <div className="border border-zinc-800 bg-zinc-900 rounded-lg p-5 space-y-3.5 flex flex-col">
+                    <div className="flex items-center justify-between border-b border-zinc-800 pb-3">
+                      <div>
+                        <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-wider flex items-center gap-1.5">
+                          <MapPin className="h-4 w-4 text-purple-500 animate-pulse" /> Peta Live GIS Percakapan Aktif
+                        </h3>
+                        <p className="text-[10px] text-zinc-500 mt-0.5">Lokasi aduan warga yang saat ini sedang aktif (Menunggu / Diproses)</p>
+                      </div>
+                    </div>
+                    {/* Map Box */}
+                    <div className="h-[300px] w-full rounded-lg border border-zinc-800 bg-zinc-950 overflow-hidden relative">
+                      <ReportMap 
+                        reports={filteredActiveChats} 
+                        onSelectReport={(r) => setSelectedReport(r)} 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 border border-zinc-800 bg-zinc-900 rounded-lg p-4 xl:flex-row xl:items-center xl:justify-between">
                     <div className="flex items-center gap-2">
                       <MessageSquare className="h-4 w-4 text-purple-400" />
-                      <h2 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Percakapan Aktif Warga</h2>
+                      <h2 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Percakapan Aktif</h2>
                       <span className="rounded-full bg-zinc-950 border border-zinc-800 px-2.5 py-0.5 text-[10px] text-zinc-400 font-bold">
-                        {activeChats.length} Sesi
+                        {filteredActiveChats.length} Sesi
                       </span>
                     </div>
-                    <button
-                      onClick={loadActiveChats}
-                      disabled={loading}
-                      className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[11px] font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition active:scale-95"
-                    >
-                      <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} /> Refresh
-                    </button>
+                    <div className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap items-center">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-400">
+                        
+                        {/* Chat Province Filter */}
+                        <select
+                          value={chatFilterProvince}
+                          onChange={e => { setChatFilterProvince(e.target.value); setChatFilterCity('all'); setChatFilterDistrict('all'); setChatPage(1); }}
+                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700 text-xs"
+                        >
+                          <option value="all">Semua Provinsi</option>
+                          {uniqueChatProvinces.map(p => (
+                            <option key={p} value={p}>{p}</option>
+                          ))}
+                        </select>
+
+                        {/* Chat City Filter */}
+                        <select
+                          value={chatFilterCity}
+                          onChange={e => { setChatFilterCity(e.target.value); setChatFilterDistrict('all'); setChatPage(1); }}
+                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700 text-xs"
+                        >
+                          <option value="all">Semua Kota</option>
+                          {uniqueChatCities.map(c => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+
+                        {/* Chat District Filter */}
+                        <select
+                          value={chatFilterDistrict}
+                          onChange={e => { setChatFilterDistrict(e.target.value); setChatPage(1); }}
+                          className="h-8 rounded border border-zinc-800 bg-zinc-950 px-2 text-zinc-300 outline-none focus:border-zinc-700 text-xs"
+                        >
+                          <option value="all">Semua Kecamatan</option>
+                          {uniqueChatDistricts.map(d => (
+                            <option key={d} value={d}>{d}</option>
+                          ))}
+                        </select>
+
+                        <button
+                          onClick={loadActiveChats}
+                          disabled={loading}
+                          className="flex h-8 items-center gap-1.5 rounded border border-zinc-850 bg-zinc-950 px-3 text-[11px] font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition active:scale-95"
+                        >
+                          <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} /> Refresh
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   {loading ? (
                     <div className="flex justify-center py-16">
                       <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />
                     </div>
-                  ) : activeChats.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-20 gap-3">
+                  ) : filteredActiveChats.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3 border border-zinc-800 bg-zinc-900 rounded-lg">
                       <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900">
                         <MessageSquare className="h-5 w-5 text-zinc-600" />
                       </div>
-                      <p className="text-xs text-zinc-500 font-medium">Tidak ada percakapan aktif saat ini</p>
+                      <p className="text-xs text-zinc-500 font-medium">Tidak ada percakapan aktif di wilayah ini saat ini</p>
                     </div>
                   ) : (
                     (() => {
                       const CHATS_PER_PAGE = 12
-                      const totalChatPages = Math.ceil(activeChats.length / CHATS_PER_PAGE)
-                      const pagedChats = activeChats.slice((chatPage - 1) * CHATS_PER_PAGE, chatPage * CHATS_PER_PAGE)
+                      const totalChatPages = Math.ceil(filteredActiveChats.length / CHATS_PER_PAGE)
+                      const pagedChats = filteredActiveChats.slice((chatPage - 1) * CHATS_PER_PAGE, chatPage * CHATS_PER_PAGE)
                       return (
                         <div className="space-y-4">
                           <div className="grid grid-cols-1 gap-3">
@@ -3307,6 +3563,11 @@ export function AdminDashboard() {
                                           <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
                                           Aktif
                                         </span>
+                                        {chat.province && (
+                                          <span className="inline-flex items-center gap-0.5 rounded-full bg-zinc-950 border border-zinc-800 px-2 py-0.5 text-[9px] font-semibold text-zinc-400">
+                                            {chat.province}
+                                          </span>
+                                        )}
                                       </div>
                                       <p className="mt-1 text-[11px] text-zinc-400 line-clamp-1 leading-relaxed">{lastText}</p>
                                     </div>
@@ -3327,17 +3588,17 @@ export function AdminDashboard() {
                               <span className="text-[10px] text-zinc-500 font-medium">Halaman {chatPage} dari {totalChatPages} (12 per halaman)</span>
                               <div className="flex items-center gap-1">
                                 <button onClick={() => setChatPage(p => Math.max(1, p - 1))} disabled={chatPage === 1}
-                                  className="flex h-6.5 w-6.5 items-center justify-center rounded border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 disabled:opacity-30 transition">
+                                  className="flex h-6.5 w-6.5 items-center justify-center rounded border border-zinc-800 bg-zinc-955 hover:bg-zinc-900 disabled:opacity-30 transition">
                                   <ChevronLeft className="h-3.5 w-3.5 text-zinc-400" />
                                 </button>
                                 {Array.from({ length: Math.min(totalChatPages, 5) }, (_, i) => i + 1).map(p => (
                                   <button key={p} onClick={() => setChatPage(p)}
                                     className={cn('flex h-6.5 w-6.5 items-center justify-center rounded text-xs font-semibold border transition',
-                                      chatPage === p ? 'bg-zinc-100 text-zinc-950 border-zinc-100' : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:bg-zinc-950'
+                                      chatPage === p ? 'bg-zinc-100 text-zinc-955 border-zinc-100' : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:bg-zinc-955'
                                     )}>{p}</button>
                                 ))}
                                 <button onClick={() => setChatPage(p => Math.min(totalChatPages, p + 1))} disabled={chatPage === totalChatPages}
-                                  className="flex h-6.5 w-6.5 items-center justify-center rounded border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 disabled:opacity-30 transition">
+                                  className="flex h-6.5 w-6.5 items-center justify-center rounded border border-zinc-800 bg-zinc-955 hover:bg-zinc-900 disabled:opacity-30 transition">
                                   <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
                                 </button>
                               </div>
