@@ -1602,7 +1602,7 @@ export function AdminDashboard() {
   const navigate = useNavigate()
   
   // ─── Active Tab ───────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'overview' | 'reports' | 'services' | 'claims' | 'summaries' | 'histories' | 'percakapan' | 'staff'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'reports' | 'services' | 'claims' | 'summaries' | 'histories' | 'percakapan' | 'staff' | 'hoaks'>('overview')
 
   // ─── Mobile Sidebar State ─────────────────────────────────────────────────
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
@@ -1968,6 +1968,16 @@ export function AdminDashboard() {
       loadSummaries(1).finally(() => setLoading(false))
     } else if (activeTab === 'histories') {
       loadHistories(1).finally(() => setLoading(false))
+    } else if (activeTab === 'percakapan') {
+      loadActiveChats().finally(() => setLoading(false))
+    } else if (activeTab === 'staff') {
+      adminService.getStaffUsers().then(res => { if (res.success) setStaffList(res.data) }).finally(() => setLoading(false))
+    } else if (activeTab === 'hoaks') {
+      adminService.getHoaxes(undefined, 1, 50).then(res => {
+        setHoaxList(res.hoaxes || [])
+        setHoaxTotal(res.total || 0)
+        setHoaxTotalPages(res.totalPages || 1)
+      }).finally(() => setLoading(false))
     }
   }, [activeTab, filterStatus, serviceFilterCategory])
 
@@ -2104,12 +2114,15 @@ export function AdminDashboard() {
   ] : []
 
   const navItems = [
-    { id: 'overview',   label: 'Ringkasan',      icon: LayoutDashboard,  desc: 'Monitoring Overview' },
-    { id: 'reports',    label: 'Laporan Warga',  icon: FileText,         desc: 'Citizen Reports' },
-    { id: 'services',   label: 'Direktori RAG',  icon: BookOpen,         desc: 'RAG Knowledge Directory' },
-    { id: 'claims',     label: 'Cek Fakta',      icon: Shield,           desc: 'Fact Check & Claims' },
-    { id: 'summaries',  label: 'Ringkasan Dok',  icon: FileSpreadsheet,  desc: 'Regulation Summaries' },
-    { id: 'histories',  label: 'Riwayat Chat',   icon: MessageSquare,    desc: 'Chat History Logs' },
+    { id: 'overview',    label: 'Ringkasan',       icon: LayoutDashboard,  desc: 'Monitoring Overview' },
+    { id: 'reports',     label: 'Laporan Warga',   icon: FileText,         desc: 'Citizen Reports' },
+    { id: 'services',    label: 'Direktori RAG',   icon: BookOpen,         desc: 'RAG Knowledge Directory' },
+    { id: 'claims',      label: 'Cek Fakta',       icon: Shield,           desc: 'Fact Check & Claims' },
+    { id: 'summaries',   label: 'Ringkasan Dok',   icon: FileSpreadsheet,  desc: 'Regulation Summaries' },
+    { id: 'histories',   label: 'Riwayat Chat',    icon: MessageSquare,    desc: 'Chat History Logs' },
+    { id: 'percakapan',  label: 'Percakapan Aktif',icon: MessageSquare,    desc: 'Live Active Chats' },
+    { id: 'staff',       label: 'Kelola Staf',     icon: Users,            desc: 'Staff Management' },
+    { id: 'hoaks',       label: 'Database Hoaks',  icon: AlertTriangle,    desc: 'WhatsApp Hoax DB' },
   ] as const
 
   return (
@@ -2207,12 +2220,15 @@ export function AdminDashboard() {
               </button>
               <div>
                 <h1 className="text-sm font-bold text-zinc-100 uppercase tracking-wider">
-                  {activeTab === 'overview' && 'Overview Ringkasan Sistem'}
-                  {activeTab === 'reports' && 'Kelola Laporan Warga'}
-                  {activeTab === 'services' && 'Basis Pengetahuan RAG (Layanan)'}
-                  {activeTab === 'claims' && 'Data Verifikasi Klaim (Cek Hoaks)'}
-                  {activeTab === 'summaries' && 'Cache Ringkasan Dokumen Perda'}
-                  {activeTab === 'histories' && 'Pemantauan Riwayat Chat Warga'}
+                  {activeTab === 'overview'   && 'Overview Ringkasan Sistem'}
+                  {activeTab === 'reports'    && 'Kelola Laporan Warga'}
+                  {activeTab === 'services'   && 'Basis Pengetahuan RAG (Layanan)'}
+                  {activeTab === 'claims'     && 'Data Verifikasi Klaim (Cek Hoaks)'}
+                  {activeTab === 'summaries'  && 'Cache Ringkasan Dokumen Perda'}
+                  {activeTab === 'histories'  && 'Pemantauan Riwayat Chat Warga'}
+                  {activeTab === 'percakapan' && 'Percakapan Aktif Warga'}
+                  {activeTab === 'staff'      && 'Kelola Staf & Akun Admin'}
+                  {activeTab === 'hoaks'      && 'Database Kata Kunci Hoaks WhatsApp'}
                 </h1>
               </div>
             </div>
@@ -3221,6 +3237,471 @@ export function AdminDashboard() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* ─── TAB CONTENT: PERCAKAPAN AKTIF ───────────────────────────── */}
+              {activeTab === 'percakapan' && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-zinc-800 bg-zinc-900 rounded-lg p-4">
+                    <div className="flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4 text-purple-400" />
+                      <h2 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Percakapan Aktif Warga</h2>
+                      <span className="rounded-full bg-zinc-950 border border-zinc-800 px-2.5 py-0.5 text-[10px] text-zinc-400 font-bold">
+                        {activeChats.length} Sesi
+                      </span>
+                    </div>
+                    <button
+                      onClick={loadActiveChats}
+                      disabled={loading}
+                      className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-1.5 text-[11px] font-semibold text-zinc-400 hover:text-zinc-100 hover:bg-zinc-900 transition active:scale-95"
+                    >
+                      <RefreshCw className={cn('h-3 w-3', loading && 'animate-spin')} /> Refresh
+                    </button>
+                  </div>
+
+                  {loading ? (
+                    <div className="flex justify-center py-16">
+                      <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />
+                    </div>
+                  ) : activeChats.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900">
+                        <MessageSquare className="h-5 w-5 text-zinc-600" />
+                      </div>
+                      <p className="text-xs text-zinc-500 font-medium">Tidak ada percakapan aktif saat ini</p>
+                    </div>
+                  ) : (
+                    (() => {
+                      const CHATS_PER_PAGE = 12
+                      const totalChatPages = Math.ceil(activeChats.length / CHATS_PER_PAGE)
+                      const pagedChats = activeChats.slice((chatPage - 1) * CHATS_PER_PAGE, chatPage * CHATS_PER_PAGE)
+                      return (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-1 gap-3">
+                            {pagedChats.map((chat: any, idx: number) => {
+                              const msgCount = Array.isArray(chat.messages) ? chat.messages.length : (chat.message_count || 0)
+                              const lastMsg = Array.isArray(chat.messages) && chat.messages.length > 0
+                                ? chat.messages[chat.messages.length - 1]
+                                : null
+                              const lastText = lastMsg
+                                ? (typeof lastMsg.content === 'string' ? lastMsg.content : JSON.stringify(lastMsg.content)).substring(0, 80)
+                                : 'Tidak ada pesan'
+                              const sessionDate = new Date(chat.updated_at || chat.created_at)
+                              return (
+                                <motion.div
+                                  key={chat.session_id || idx}
+                                  variants={fadeUp}
+                                  initial="hidden"
+                                  animate="show"
+                                  className="flex items-start justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 hover:border-zinc-700 transition group"
+                                >
+                                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-purple-900/50 bg-purple-950/30">
+                                      <MessageSquare className="h-3.5 w-3.5 text-purple-400" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-xs font-bold text-zinc-100 font-mono truncate">{(chat.session_id || 'unknown').substring(0, 16)}...</span>
+                                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-950/50 border border-emerald-900/40 px-2 py-0.5 text-[9px] font-bold text-emerald-400 uppercase tracking-wider">
+                                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                          Aktif
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-[11px] text-zinc-400 line-clamp-1 leading-relaxed">{lastText}</p>
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-1 shrink-0">
+                                    <span className="text-[10px] font-bold text-zinc-300">{msgCount} pesan</span>
+                                    <span className="text-[9px] text-zinc-600 font-mono">
+                                      {sessionDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} {sessionDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                    </span>
+                                  </div>
+                                </motion.div>
+                              )
+                            })}
+                          </div>
+
+                          {totalChatPages > 1 && (
+                            <div className="flex items-center justify-between border border-zinc-800 bg-zinc-900 rounded-lg px-4 py-3">
+                              <span className="text-[10px] text-zinc-500 font-medium">Halaman {chatPage} dari {totalChatPages} (12 per halaman)</span>
+                              <div className="flex items-center gap-1">
+                                <button onClick={() => setChatPage(p => Math.max(1, p - 1))} disabled={chatPage === 1}
+                                  className="flex h-6.5 w-6.5 items-center justify-center rounded border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 disabled:opacity-30 transition">
+                                  <ChevronLeft className="h-3.5 w-3.5 text-zinc-400" />
+                                </button>
+                                {Array.from({ length: Math.min(totalChatPages, 5) }, (_, i) => i + 1).map(p => (
+                                  <button key={p} onClick={() => setChatPage(p)}
+                                    className={cn('flex h-6.5 w-6.5 items-center justify-center rounded text-xs font-semibold border transition',
+                                      chatPage === p ? 'bg-zinc-100 text-zinc-950 border-zinc-100' : 'border-zinc-800 bg-zinc-900 text-zinc-400 hover:bg-zinc-950'
+                                    )}>{p}</button>
+                                ))}
+                                <button onClick={() => setChatPage(p => Math.min(totalChatPages, p + 1))} disabled={chatPage === totalChatPages}
+                                  className="flex h-6.5 w-6.5 items-center justify-center rounded border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 disabled:opacity-30 transition">
+                                  <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })()
+                  )}
+                </div>
+              )}
+
+              {/* ─── TAB CONTENT: KELOLA STAF ────────────────────────────────── */}
+              {activeTab === 'staff' && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  {/* Sub-tab header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-zinc-800 bg-zinc-900 rounded-lg p-4">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-sky-400" />
+                      <h2 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Manajemen Akun Staf</h2>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setStaffSubTab('list')}
+                        className={cn('px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition',
+                          staffSubTab === 'list' ? 'bg-zinc-100 text-zinc-950 border-zinc-100' : 'border-zinc-800 bg-zinc-950 text-zinc-400 hover:bg-zinc-900'
+                        )}
+                      >Daftar Staf</button>
+                      <button
+                        onClick={() => setStaffSubTab('create')}
+                        className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition',
+                          staffSubTab === 'create' ? 'bg-zinc-100 text-zinc-950 border-zinc-100' : 'border-zinc-800 bg-zinc-950 text-zinc-400 hover:bg-zinc-900'
+                        )}
+                      ><UserPlus className="h-3 w-3" /> Tambah Staf</button>
+                    </div>
+                  </div>
+
+                  {/* Staff List */}
+                  {staffSubTab === 'list' && (
+                    <div className="space-y-3">
+                      {loading ? (
+                        <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-zinc-500" /></div>
+                      ) : staffList.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center py-20 gap-3">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900">
+                            <Users className="h-5 w-5 text-zinc-600" />
+                          </div>
+                          <p className="text-xs text-zinc-500 font-medium">Belum ada data staf terdaftar</p>
+                          <button onClick={() => setStaffSubTab('create')}
+                            className="flex items-center gap-1.5 rounded-lg border border-zinc-800 bg-zinc-900 px-4 py-2 text-[11px] font-semibold text-zinc-300 hover:bg-zinc-800 transition">
+                            <UserPlus className="h-3.5 w-3.5" /> Tambah Staf Pertama
+                          </button>
+                        </div>
+                      ) : (
+                        staffList.map((staff: any, idx: number) => (
+                          <motion.div key={staff.id || idx} variants={fadeUp} initial="hidden" animate="show"
+                            className="flex items-center justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 hover:border-zinc-700 transition">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-sky-900/50 bg-sky-950/30">
+                                <span className="text-xs font-bold text-sky-400">{(staff.nama_lengkap || staff.email || '?')[0].toUpperCase()}</span>
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-bold text-zinc-100">{staff.nama_lengkap || '-'}</div>
+                                <div className="text-[10px] text-zinc-400 font-mono truncate">{staff.email}</div>
+                                {staff.no_telepon && <div className="text-[9px] text-zinc-500 mt-0.5">{staff.no_telepon}</div>}
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className={cn('rounded-full px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wider border',
+                                staff.role === 'superadmin' ? 'bg-purple-950/50 border-purple-900/40 text-purple-400' :
+                                staff.role === 'admin' ? 'bg-sky-950/50 border-sky-900/40 text-sky-400' :
+                                'bg-zinc-950 border-zinc-800 text-zinc-400'
+                              )}>{staff.role || 'petugas'}</span>
+                            </div>
+                          </motion.div>
+                        ))
+                      )}
+                    </div>
+                  )}
+
+                  {/* Create Staff Form */}
+                  {staffSubTab === 'create' && (
+                    <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-6 space-y-5">
+                      <div>
+                        <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Form Tambah Staf Baru</h3>
+                        <p className="text-[10px] text-zinc-500 mt-0.5">Buat akun staf baru untuk mengakses admin portal</p>
+                      </div>
+
+                      {staffFormError && (
+                        <div className="flex items-center gap-2 rounded-lg border border-rose-900/50 bg-rose-950/30 px-4 py-3 text-xs text-rose-400">
+                          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0" />{staffFormError}
+                        </div>
+                      )}
+                      {staffFormSuccess && (
+                        <div className="flex items-center gap-2 rounded-lg border border-emerald-900/50 bg-emerald-950/30 px-4 py-3 text-xs text-emerald-400">
+                          <CheckCircle2 className="h-3.5 w-3.5 flex-shrink-0" />{staffFormSuccess}
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {([
+                          { key: 'email', label: 'Email', type: 'email', placeholder: 'nama@domain.com', required: true },
+                          { key: 'password', label: 'Password', type: 'password', placeholder: 'Min. 8 karakter', required: true },
+                          { key: 'nama_lengkap', label: 'Nama Lengkap', type: 'text', placeholder: 'Nama sesuai KTP', required: true },
+                          { key: 'nama_panggilan', label: 'Nama Panggilan', type: 'text', placeholder: 'Nama sehari-hari' },
+                          { key: 'no_telepon', label: 'No. Telepon', type: 'tel', placeholder: '08xxxxxxxxxx' },
+                          { key: 'tanggal_lahir', label: 'Tanggal Lahir', type: 'date', placeholder: '' },
+                        ] as const).map(field => (
+                          <div key={field.key}>
+                            <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">
+                              {field.label} {('required' in field) && <span className="text-rose-400">*</span>}
+                            </label>
+                            <input
+                              type={field.type}
+                              placeholder={field.placeholder}
+                              value={(staffForm as any)[field.key] || ''}
+                              onChange={e => setStaffForm(f => ({ ...f, [field.key]: e.target.value }))}
+                              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition"
+                            />
+                          </div>
+                        ))}
+                        <div>
+                          <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Role <span className="text-rose-400">*</span></label>
+                          <select
+                            value={staffForm.role}
+                            onChange={e => setStaffForm(f => ({ ...f, role: e.target.value }))}
+                            className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 focus:outline-none focus:border-zinc-600 transition"
+                          >
+                            <option value="petugas">Petugas</option>
+                            <option value="admin">Admin</option>
+                            <option value="superadmin">Super Admin</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-3 pt-2">
+                        <button
+                          onClick={async () => {
+                            if (!staffForm.email || !staffForm.password || !staffForm.nama_lengkap) {
+                              setStaffFormError('Email, password, dan nama lengkap wajib diisi')
+                              return
+                            }
+                            setStaffFormError(null)
+                            setStaffFormSuccess(null)
+                            setStaffFormLoading(true)
+                            try {
+                              await adminService.createStaffUser(staffForm)
+                              setStaffFormSuccess('Staf berhasil ditambahkan!')
+                              setStaffForm({ email: '', password: '', nama_lengkap: '', nama_panggilan: '', no_telepon: '', tanggal_lahir: '', role: 'petugas' })
+                              const res = await adminService.getStaffUsers()
+                              if (res.success) setStaffList(res.data)
+                            } catch (err: any) {
+                              setStaffFormError(err.message || 'Gagal menambahkan staf')
+                            } finally {
+                              setStaffFormLoading(false)
+                            }
+                          }}
+                          disabled={staffFormLoading}
+                          className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-100 px-5 py-2 text-xs font-bold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60 transition active:scale-95"
+                        >
+                          {staffFormLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <UserPlus className="h-3.5 w-3.5" />}
+                          {staffFormLoading ? 'Menyimpan...' : 'Tambah Staf'}
+                        </button>
+                        <button
+                          onClick={() => { setStaffFormError(null); setStaffFormSuccess(null); setStaffForm({ email: '', password: '', nama_lengkap: '', nama_panggilan: '', no_telepon: '', tanggal_lahir: '', role: 'petugas' }) }}
+                          className="rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-2 text-xs font-semibold text-zinc-400 hover:text-zinc-100 transition"
+                        >Reset</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ─── TAB CONTENT: DATABASE HOAKS ─────────────────────────────── */}
+              {activeTab === 'hoaks' && (
+                <div className="space-y-4 animate-in fade-in duration-200">
+                  {/* Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border border-zinc-800 bg-zinc-900 rounded-lg p-4">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-400" />
+                      <h2 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">Database Kata Kunci Hoaks</h2>
+                      <span className="rounded-full bg-zinc-950 border border-zinc-800 px-2.5 py-0.5 text-[10px] text-zinc-400 font-bold">
+                        {hoaxList.length} Entri
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => { setHoaxFormOpen(true); setHoaxEditItem(null); setHoaxFormData({ keywords: '', title: '', explanation: '', source_url: '' }) }}
+                      className="flex items-center gap-1.5 rounded-lg border border-amber-900/50 bg-amber-950/30 px-3 py-1.5 text-[11px] font-semibold text-amber-400 hover:bg-amber-950/50 transition active:scale-95"
+                    >
+                      <Plus className="h-3.5 w-3.5" /> Tambah Entri Hoaks
+                    </button>
+                  </div>
+
+                  {/* Search */}
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+                    <input
+                      type="text"
+                      placeholder="Cari kata kunci hoaks..."
+                      value={hoaxSearch}
+                      onChange={e => setHoaxSearch(e.target.value)}
+                      className="w-full rounded-lg border border-zinc-800 bg-zinc-900 pl-9 pr-4 py-2.5 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition"
+                    />
+                  </div>
+
+                  {/* List */}
+                  {loading ? (
+                    <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-zinc-500" /></div>
+                  ) : hoaxList.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 gap-3">
+                      <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-900">
+                        <AlertTriangle className="h-5 w-5 text-zinc-600" />
+                      </div>
+                      <p className="text-xs text-zinc-500">Belum ada entri kata kunci hoaks</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {hoaxList
+                        .filter((h: any) => !hoaxSearch.trim() ||
+                          (h.keywords || '').toLowerCase().includes(hoaxSearch.toLowerCase()) ||
+                          (h.title || '').toLowerCase().includes(hoaxSearch.toLowerCase())
+                        )
+                        .slice((hoaxPage - 1) * 20, hoaxPage * 20)
+                        .map((hoax: any) => (
+                          <motion.div key={hoax.id} variants={fadeUp} initial="hidden" animate="show"
+                            className="flex items-start justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 hover:border-zinc-700 transition">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap mb-1">
+                                <span className="text-xs font-bold text-zinc-100">{hoax.title || 'Tanpa Judul'}</span>
+                              </div>
+                              <div className="flex flex-wrap gap-1 mb-1.5">
+                                {(hoax.keywords || '').split(',').filter(Boolean).map((kw: string, i: number) => (
+                                  <span key={i} className="inline-block rounded bg-amber-950/50 border border-amber-900/30 px-1.5 py-0.5 text-[9px] font-mono text-amber-400">{kw.trim()}</span>
+                                ))}
+                              </div>
+                              {hoax.explanation && (
+                                <p className="text-[10px] text-zinc-400 line-clamp-2 leading-relaxed">{hoax.explanation}</p>
+                              )}
+                              {hoax.source_url && (
+                                <a href={hoax.source_url} target="_blank" rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 mt-1 text-[9px] text-sky-400 hover:text-sky-300 transition">
+                                  <ExternalLink className="h-2.5 w-2.5" /> Sumber
+                                </a>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <button
+                                onClick={() => { setHoaxEditItem(hoax); setHoaxFormData({ keywords: hoax.keywords || '', title: hoax.title || '', explanation: hoax.explanation || '', source_url: hoax.source_url || '' }); setHoaxFormOpen(true) }}
+                                className="flex h-7 w-7 items-center justify-center rounded border border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-sky-400 hover:border-sky-900 transition"
+                              ><Edit2 className="h-3 w-3" /></button>
+                              <button
+                                onClick={async () => {
+                                  if (!confirm('Hapus entri hoaks ini?')) return
+                                  await adminService.deleteHoax(hoax.id)
+                                  const res = await adminService.getHoaxes(hoaxSearch, hoaxPage)
+                                  setHoaxList(res.hoaxes || [])
+                                  setHoaxTotal(res.total || 0)
+                                  setHoaxTotalPages(res.totalPages || 1)
+                                }}
+                                className="flex h-7 w-7 items-center justify-center rounded border border-zinc-800 bg-zinc-950 text-zinc-400 hover:text-rose-400 hover:border-rose-900 transition"
+                              ><Trash2 className="h-3 w-3" /></button>
+                            </div>
+                          </motion.div>
+                        ))
+                      }
+
+                      {hoaxTotalPages > 1 && (
+                        <div className="flex items-center justify-between border border-zinc-800 bg-zinc-900 rounded-lg px-4 py-3 mt-3">
+                          <span className="text-[10px] text-zinc-500">{hoaxTotal} entri total</span>
+                          <div className="flex items-center gap-1">
+                            <button onClick={() => setHoaxPage(p => Math.max(1, p - 1))} disabled={hoaxPage === 1}
+                              className="flex h-6.5 w-6.5 items-center justify-center rounded border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 disabled:opacity-30 transition">
+                              <ChevronLeft className="h-3.5 w-3.5 text-zinc-400" />
+                            </button>
+                            <span className="px-2 text-[10px] text-zinc-400 font-mono">{hoaxPage}/{hoaxTotalPages}</span>
+                            <button onClick={() => setHoaxPage(p => Math.min(hoaxTotalPages, p + 1))} disabled={hoaxPage === hoaxTotalPages}
+                              className="flex h-6.5 w-6.5 items-center justify-center rounded border border-zinc-800 bg-zinc-950 hover:bg-zinc-900 disabled:opacity-30 transition">
+                              <ChevronRight className="h-3.5 w-3.5 text-zinc-400" />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Hoaks Form Modal */}
+                  <AnimatePresence>
+                    {hoaxFormOpen && (
+                      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+                        <motion.div initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 20 }}
+                          className="w-full max-w-md rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl overflow-hidden">
+                          <div className="flex items-center justify-between border-b border-zinc-800 p-5">
+                            <div>
+                              <h3 className="text-sm font-bold text-zinc-100">{hoaxEditItem ? 'Edit Entri Hoaks' : 'Tambah Entri Hoaks Baru'}</h3>
+                              <p className="text-[10px] text-zinc-500 mt-0.5">Kata kunci untuk mendeteksi hoaks di WhatsApp</p>
+                            </div>
+                            <button onClick={() => setHoaxFormOpen(false)} className="text-zinc-500 hover:text-zinc-300"><X className="h-4 w-4" /></button>
+                          </div>
+                          <div className="p-5 space-y-4">
+                            <div>
+                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Judul <span className="text-rose-400">*</span></label>
+                              <input type="text" placeholder="Judul singkat entri hoaks"
+                                value={hoaxFormData.title}
+                                onChange={e => setHoaxFormData(f => ({ ...f, title: e.target.value }))}
+                                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Kata Kunci <span className="text-rose-400">*</span></label>
+                              <input type="text" placeholder="kata1, kata2, kata3 (pisah dengan koma)"
+                                value={hoaxFormData.keywords}
+                                onChange={e => setHoaxFormData(f => ({ ...f, keywords: e.target.value }))}
+                                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">Penjelasan / Klarifikasi</label>
+                              <textarea rows={3} placeholder="Jelaskan mengapa ini hoaks dan apa faktanya..."
+                                value={hoaxFormData.explanation}
+                                onChange={e => setHoaxFormData(f => ({ ...f, explanation: e.target.value }))}
+                                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition resize-none" />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1.5">URL Sumber (opsional)</label>
+                              <input type="url" placeholder="https://sumber-terpercaya.com"
+                                value={hoaxFormData.source_url}
+                                onChange={e => setHoaxFormData(f => ({ ...f, source_url: e.target.value }))}
+                                className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:border-zinc-600 transition" />
+                            </div>
+                          </div>
+                          <div className="flex gap-3 border-t border-zinc-800 p-5">
+                            <button
+                              onClick={async () => {
+                                if (!hoaxFormData.title || !hoaxFormData.keywords) return
+                                setHoaxFormLoading(true)
+                                try {
+                                  if (hoaxEditItem) {
+                                    await adminService.updateHoax(hoaxEditItem.id, hoaxFormData)
+                                  } else {
+                                    await adminService.createHoax(hoaxFormData)
+                                  }
+                                  const res = await adminService.getHoaxes(hoaxSearch, hoaxPage)
+                                  setHoaxList(res.hoaxes || [])
+                                  setHoaxTotal(res.total || 0)
+                                  setHoaxTotalPages(res.totalPages || 1)
+                                  setHoaxFormOpen(false)
+                                } catch (err: any) {
+                                  alert(err.message || 'Gagal menyimpan')
+                                } finally {
+                                  setHoaxFormLoading(false)
+                                }
+                              }}
+                              disabled={hoaxFormLoading || !hoaxFormData.title || !hoaxFormData.keywords}
+                              className="flex-1 flex items-center justify-center gap-2 rounded-lg border border-zinc-700 bg-zinc-100 py-2.5 text-xs font-bold text-zinc-950 hover:bg-zinc-200 disabled:opacity-60 transition active:scale-95"
+                            >
+                              {hoaxFormLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                              {hoaxFormLoading ? 'Menyimpan...' : hoaxEditItem ? 'Simpan Perubahan' : 'Tambah Entri'}
+                            </button>
+                            <button onClick={() => setHoaxFormOpen(false)}
+                              className="rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-2.5 text-xs font-semibold text-zinc-400 hover:text-zinc-100 transition">Batal</button>
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
             </div>
