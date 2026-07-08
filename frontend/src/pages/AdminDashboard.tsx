@@ -26,6 +26,7 @@ import { authService } from '@/services/auth'
 import { useAuthStore } from '@/store/authStore'
 import { ReportMap } from '@/components/admin/ReportMap'
 import { cn } from '@/lib/utils'
+import { ChatWidget } from '@/components/chat/ChatWidget'
 
 // ─── Animation presets ──────────────────────────────────────────────────────
 const fadeUp = { hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0 } }
@@ -665,8 +666,9 @@ function StatusDropdown({ current, reportId, onUpdate }: {
 }
 
 // ─── Report Detail Modal ──────────────────────────────────────────────────────
-function ReportDetailModal({ report, onClose, onUpdate }: {
-  report: CitizenReport; onClose: () => void; onUpdate: (id: string, status: string, note?: string) => Promise<void>
+function ReportDetailModal({ report, onClose, onUpdate, onOpenChat }: {
+  report: CitizenReport; onClose: () => void; onUpdate: (id: string, status: string, note?: string) => Promise<void>;
+  onOpenChat?: (reportId: string) => void
 }) {
   const [adminNote, setAdminNote] = useState(report.admin_note || '')
   const [saving, setSaving] = useState(false)
@@ -742,24 +744,37 @@ function ReportDetailModal({ report, onClose, onUpdate }: {
         </div>
 
         {/* Actions */}
-        <div className="flex gap-2 border-t border-zinc-800 p-5 bg-zinc-950/50">
-          {(['Diproses', 'Selesai', 'Ditolak'] as const).map(s => {
-            const c = STATUS_CONFIG[s]
-            return (
-              <button
-                key={s}
-                onClick={() => handleSave(s)}
-                disabled={saving}
-                className={cn(
-                  'flex flex-1 items-center justify-center gap-1.5 rounded border py-2 text-xs font-semibold transition active:scale-[0.98] disabled:opacity-50',
-                  c.bg, c.color, 'hover:brightness-110'
-                )}
-              >
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
-                {s}
-              </button>
-            )
-          })}
+        <div className="flex flex-col gap-2.5 border-t border-zinc-800 p-5 bg-zinc-950/50">
+          {onOpenChat && ['Menunggu', 'Diproses'].includes(report.status) && (
+            <button
+              onClick={() => {
+                onOpenChat(report.id)
+                onClose()
+              }}
+              className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-purple-900 bg-purple-950/40 text-purple-400 py-2 text-xs font-bold tracking-wider uppercase transition hover:bg-purple-950/60 active:scale-[0.98]"
+            >
+              <MessageSquare className="h-3.5 w-3.5" /> Buka Obrolan Chat Warga
+            </button>
+          )}
+          <div className="flex gap-2 w-full">
+            {(['Diproses', 'Selesai', 'Ditolak'] as const).map(s => {
+              const c = STATUS_CONFIG[s]
+              return (
+                <button
+                  key={s}
+                  onClick={() => handleSave(s)}
+                  disabled={saving}
+                  className={cn(
+                    'flex flex-1 items-center justify-center gap-1.5 rounded border py-2 text-xs font-semibold transition active:scale-[0.98] disabled:opacity-50',
+                    c.bg, c.color, 'hover:brightness-110'
+                  )}
+                >
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  {s}
+                </button>
+              )
+            })}
+          </div>
         </div>
       </motion.div>
     </motion.div>
@@ -1529,6 +1544,47 @@ function AddRAGDocumentModal({ onClose, onAdd }: { onClose: () => void; onAdd: (
   )
 }
 
+// ─── Active Chat Room Modal ────────────────────────────────────────────────
+function ActiveChatModal({ reportId, onClose }: { reportId: string; onClose: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, y: 20, scale: 0.95 }}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={{ opacity: 0, y: 20, scale: 0.95 }}
+        onClick={e => e.stopPropagation()}
+        className="relative w-full max-w-2xl h-[80vh] overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-2xl text-zinc-100 flex flex-col"
+      >
+        {/* Header with close button */}
+        <div className="flex items-center justify-between border-b border-zinc-800 bg-zinc-950/80 p-4 shrink-0">
+          <div>
+            <h3 className="text-xs font-bold text-zinc-100 uppercase tracking-wider">
+              Obrolan Langsung Warga
+            </h3>
+            <p className="text-[10px] text-zinc-550 text-zinc-400 font-mono mt-0.5">ID Laporan: {reportId}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-850 bg-zinc-950 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200 transition shadow active:scale-95"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Chat Widget container */}
+        <div className="flex-1 min-h-0 bg-zinc-950">
+          <ChatWidget reportId={reportId} className="h-full border-none rounded-none shadow-none" />
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
 // ─── Chat Transcript Modal ──────────────────────────────────────────────────
 function ChatTranscriptModal({ session, onClose }: { session: ChatHistorySession; onClose: () => void }) {
   return (
@@ -1651,6 +1707,7 @@ export function AdminDashboard() {
   const [historiesPage, setHistoriesPage] = useState(1)
   const [historiesSearch, setHistoriesSearch] = useState('')
   const [selectedHistory, setSelectedHistory] = useState<ChatHistorySession | null>(null)
+  const [activeChatReportId, setActiveChatReportId] = useState<string | null>(null)
 
   // ─── Global States ────────────────────────────────────────────────────────
   const [loading, setLoading] = useState(true)
@@ -3550,7 +3607,8 @@ export function AdminDashboard() {
                                   variants={fadeUp}
                                   initial="hidden"
                                   animate="show"
-                                  className="flex items-start justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 hover:border-zinc-700 transition group"
+                                  onClick={() => setActiveChatReportId(chat.id)}
+                                  className="flex items-start justify-between gap-4 rounded-lg border border-zinc-800 bg-zinc-900 p-4 hover:border-zinc-700 hover:bg-zinc-800/40 cursor-pointer active:scale-[0.99] transition group"
                                 >
                                   <div className="flex items-start gap-3 min-w-0 flex-1">
                                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-purple-900/50 bg-purple-950/30">
@@ -3572,11 +3630,18 @@ export function AdminDashboard() {
                                       <p className="mt-1 text-[11px] text-zinc-400 line-clamp-1 leading-relaxed">{lastText}</p>
                                     </div>
                                   </div>
-                                  <div className="flex flex-col items-end gap-1 shrink-0">
-                                    <span className="text-[10px] font-bold text-zinc-300">{msgCount} pesan</span>
-                                    <span className="text-[9px] text-zinc-600 font-mono">
-                                      {sessionDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} {sessionDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
-                                    </span>
+                                  <div className="flex items-center gap-4 shrink-0">
+                                    <div className="flex flex-col items-end gap-1">
+                                      <span className="text-[10px] font-bold text-zinc-300">{msgCount} pesan</span>
+                                      <span className="text-[9px] text-zinc-600 font-mono">
+                                        {sessionDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} {sessionDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}
+                                      </span>
+                                    </div>
+                                    <button 
+                                      className="hidden sm:inline-flex items-center justify-center h-8 px-3 rounded-lg border border-purple-900/60 bg-purple-950/40 hover:bg-purple-950/80 text-purple-400 text-[11px] font-bold tracking-wider uppercase transition active:scale-95 shadow-sm group-hover:flex"
+                                    >
+                                      Buka Chat
+                                    </button>
                                   </div>
                                 </motion.div>
                               )
@@ -3980,6 +4045,7 @@ export function AdminDashboard() {
               await handleStatusUpdate(id, status, note)
               setSelectedReport(null)
             }}
+            onOpenChat={(id) => setActiveChatReportId(id)}
           />
         )}
       </AnimatePresence>
@@ -4016,6 +4082,16 @@ export function AdminDashboard() {
               await adminService.createService(payload)
               await loadServices(serviceFilterCategory)
             }}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* ─── Active Chat Modal ───────────────────────────────────────────── */}
+      <AnimatePresence>
+        {activeChatReportId && (
+          <ActiveChatModal
+            reportId={activeChatReportId}
+            onClose={() => setActiveChatReportId(null)}
           />
         )}
       </AnimatePresence>
