@@ -27,6 +27,7 @@ import {
   getChatHistoriesController,
   deleteHistoryController,
   getActiveChatsController,
+  parseServiceDocumentController,
 } from './controllers/chatController';
 import { authMiddleware, requireRoles, optionalAuthMiddleware } from './utils/authMiddleware';
 import { createStaffUserController, getStaffUsersController } from './controllers/authController';
@@ -37,6 +38,7 @@ import {
   updateHoaxController,
   deleteHoaxController,
 } from './controllers/whatsappController';
+import { adminEvents } from './utils/eventEmitter';
 
 // --- Inisialisasi App ---
 const app = new Hono();
@@ -46,6 +48,10 @@ const { upgradeWebSocket, websocket } = createBunWebSocket();
 
 // Map untuk melacak koneksi aktif per reportId (room)
 const activeRooms = new Map<string, Set<any>>();
+
+// Set untuk melacak koneksi admin aktif
+const activeAdmins = new Set<any>();
+
 
 app.get(
   '/api/ws/chat',
@@ -112,6 +118,35 @@ app.get(
     };
   })
 );
+
+app.get(
+  '/api/ws/admin',
+  upgradeWebSocket((c) => {
+    return {
+      onOpen(evt, ws) {
+        console.log('🔌 [WS Admin] Admin connection opened.');
+        activeAdmins.add(ws);
+      },
+      onClose(evt, ws) {
+        console.log('🔌 [WS Admin] Admin connection closed.');
+        activeAdmins.delete(ws);
+      }
+    };
+  })
+);
+
+// Event listener untuk mem-broadcast notifikasi real-time ke semua dashboard admin
+adminEvents.on('broadcast', (payload) => {
+  const broadcastPayload = JSON.stringify(payload);
+  for (const client of activeAdmins) {
+    try {
+      client.send(broadcastPayload);
+    } catch (err) {
+      activeAdmins.delete(client);
+    }
+  }
+});
+
 
 // --- Middleware ---
 
@@ -197,6 +232,12 @@ app.get('/api/admin/stats', getDashboardStatsController);
 app.post('/api/services', createServiceController);
 app.get('/api/services', getServicesController);
 app.delete('/api/services/:id', deleteServiceController);
+app.post(
+  '/api/services/parse-doc',
+  authMiddleware,
+  requireRoles(['superadmin', 'admin']),
+  parseServiceDocumentController
+);
 
 /**
  * Registrasi manajemen data tambahan (Admin)
@@ -1036,7 +1077,6 @@ data: {"type": "done", "sessionId": "..."}</pre>
   "email": "petugas@komunitas.id",
   "password": "kataSandiKuat",
   "role": "petugas",
-  "nik": "16-digit-nik",
   "nama_lengkap": "Alif",
   "nama_panggilan": "Alif",
   "tanggal_lahir": "2000-01-01",

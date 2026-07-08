@@ -8,13 +8,26 @@ import { logger } from '../utils/logger';
 
 // Ambil konfigurasi dari environment variables
 const supabaseUrl = process.env.SUPABASE_URL!;
+logger.info('Supabase URL:', supabaseUrl);
+logger.info('Using Service Role Key?', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY!;
 
-/**
- * Inisialisasi client Supabase
- * Gunakan service role key jika ada (untuk bypass RLS di backend), jika tidak gunakan anon key.
- */
-export const supabase = createClient(supabaseUrl, supabaseKey);
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
+  }
+});
+
+// Separate admin client that never signs in users, ensuring service role key is always used
+export const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
+  }
+});
 
 /**
  * Menyimpan riwayat chat ke database
@@ -22,15 +35,20 @@ export const supabase = createClient(supabaseUrl, supabaseKey);
  * @param messages - Array pesan yang akan disimpan
  * @returns Promise<void>
  */
-export const saveChatHistory = async (sessionId: string, messages: any[]): Promise<void> => {
+export const saveChatHistory = async (sessionId: string, messages: any[], userId?: string | null): Promise<void> => {
   try {
-    const { error } = await supabase
+    const upsertData: any = {
+      session_id: sessionId,
+      messages: messages,
+      updated_at: new Date().toISOString(),
+    };
+    if (userId) {
+      upsertData.user_id = userId;
+    }
+
+    const { error } = await supabaseAdmin
       .from('chat_history')
-      .upsert({
-        session_id: sessionId,
-        messages: messages,
-        updated_at: new Date().toISOString(),
-      });
+      .upsert(upsertData);
 
     if (error) throw error;
     logger.info('✅ Chat history saved for session:', sessionId);
@@ -47,7 +65,7 @@ export const saveChatHistory = async (sessionId: string, messages: any[]): Promi
  */
 export const getChatHistory = async (sessionId: string): Promise<any[] | null> => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('chat_history')
       .select('messages')
       .eq('session_id', sessionId)
@@ -75,7 +93,7 @@ export const getChatHistory = async (sessionId: string): Promise<any[] | null> =
  */
 export const deleteChatHistory = async (sessionId: string): Promise<void> => {
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('chat_history')
       .delete()
       .eq('session_id', sessionId);

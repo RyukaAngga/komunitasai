@@ -249,20 +249,25 @@ export function ReportMap({ reports, onSelectReport }: ReportMapProps) {
             <div style="margin-bottom: 4px;">
               <span style="color: #a1a1aa;">Status:</span> <span style="font-weight: bold; text-transform: uppercase; color: ${markerColor};">${report.status}</span>
             </div>
-            <div style="color: #d4d4d8; line-clamp: 2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+            <div style="color: #d4d4d8; line-clamp: 2; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin-bottom: 6px;">
               ${cleanDescription}
             </div>
+            <button id="btn-chat-${report.id}" style="width: 100%; border: none; background: #7c3aed; color: white; padding: 5px; border-radius: 4px; font-weight: bold; font-size: 9.5px; cursor: pointer; text-align: center; display: block;">
+              💬 Buka Obrolan Chat
+            </button>
           </div>
         `, {
           className: 'dark-map-popup'
         });
 
-        // Set click listener to pass selected report
-        if (onSelectReport) {
-          marker.on('click', () => {
-            onSelectReport(report);
-          });
-        }
+        marker.on('popupopen', () => {
+          const btn = document.getElementById(`btn-chat-${report.id}`);
+          if (btn && onSelectReport) {
+            btn.onclick = () => {
+              onSelectReport(report);
+            };
+          }
+        });
 
         // Add to cluster group
         clusterGroupRef.current.addLayer(marker);

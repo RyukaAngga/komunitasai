@@ -1,5 +1,5 @@
 import { Context, Next } from 'hono';
-import { supabase } from '../services/supabaseService';
+import { supabase, supabaseAdmin } from '../services/supabaseService';
 import { logger } from './logger';
 
 /**
@@ -26,8 +26,27 @@ export const authMiddleware = async (c: Context, next: Next) => {
       }, 401);
     }
 
-    // 1. Verifikasi token menggunakan Supabase Auth API
-    const { data: { user }, error: authError } = await supabase.auth.getUser(token);
+    // Create a request-specific userClient with the token
+    const { createClient } = await import('@supabase/supabase-js');
+    const userClient = createClient(
+      process.env.SUPABASE_URL!,
+      process.env.SUPABASE_ANON_KEY!,
+      {
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
+        }
+      }
+    );
+
+    // 1. Verifikasi token menggunakan userClient
+    const { data: { user }, error: authError } = await userClient.auth.getUser(token);
 
     if (authError || !user) {
       logger.warn('⚠️ Verification of JWT failed:', authError?.message || 'No user returned');
@@ -37,8 +56,8 @@ export const authMiddleware = async (c: Context, next: Next) => {
       }, 401);
     }
 
-    // 2. Ambil profil user untuk mendapatkan role dan data lengkapnya
-    let { data: profile, error: profileError } = await supabase
+    // 2. Ambil profil user untuk mendapatkan role dan data lengkapnya (menggunakan system-level client to bypass RLS recursion)
+    let { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('*')
       .eq('id', user.id)
@@ -52,40 +71,52 @@ export const authMiddleware = async (c: Context, next: Next) => {
       }, 500);
     }
 
+    // Auto-create profile if it doesn't exist (e.g. for Google OAuth logins)
+    if (!profile) {
+      logger.info(`⚠️ Profile for user ${user.id} not found in database. Auto-creating basic profile from token metadata...`);
+      const isKomunitasEmail = user.email?.toLowerCase().endsWith('@komunitas.id');
+      const defaultRole = isKomunitasEmail ? 'superadmin' : 'user';
+      
+      const { data: newProfile, error: createError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: user.id,
+          email: user.email!,
+          nama_lengkap: user.user_metadata?.full_name || user.user_metadata?.nama_lengkap || (isKomunitasEmail ? 'Superadmin KOMUNITAS' : 'Pengguna KOMUNITAS'),
+          nama_panggilan: user.user_metadata?.name || user.user_metadata?.nama_panggilan || (isKomunitasEmail ? 'Superadmin' : 'User'),
+          nomor_telepon: user.user_metadata?.phone || '+628000000000', // placeholder
+          role: defaultRole,
+        })
+        .select()
+        .maybeSingle();
+
+      if (createError) {
+        logger.error('❌ Failed to auto-create profile in authMiddleware:', createError);
+      } else if (newProfile) {
+        profile = newProfile;
+        logger.info(`✅ Successfully auto-created profile for OAuth user: ${user.email}`);
+      }
+    }
+
     // Auto-heal: Jika email berakhiran @komunitas.id tetapi role-nya masih 'user', ubah otomatis di memori dan coba update DB
     if (profile && (profile.role === 'user' || !profile.role) && user.email?.toLowerCase().endsWith('@komunitas.id')) {
       logger.info(`🔧 Auto-healing role to 'superadmin' in memory for: ${user.email}`);
       profile.role = 'superadmin';
 
-      try {
-        const { createClient } = await import('@supabase/supabase-js');
-        const userClient = createClient(
-          process.env.SUPABASE_URL!,
-          process.env.SUPABASE_ANON_KEY!,
-          {
-            global: {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-            },
-          }
-        );
-        userClient
-          .from('profiles')
-          .update({ role: 'superadmin' })
-          .eq('id', user.id)
-          .then(({ error }) => {
-            if (error) logger.error('❌ Failed to auto-heal profile role in DB-async:', error);
-            else logger.info('✅ Asynchronously auto-healed profile role in DB to superadmin');
-          });
-      } catch (err) {
-        logger.error('❌ Error setting up async auto-heal:', err);
-      }
+      supabaseAdmin
+        .from('profiles')
+        .update({ role: 'superadmin' })
+        .eq('id', user.id)
+        .then(({ error }) => {
+          if (error) logger.error('❌ Failed to auto-heal profile role in DB-async:', error);
+          else logger.info('✅ Asynchronously auto-healed profile role in DB to superadmin');
+        });
     }
 
     // 3. Simpan data di Hono State agar bisa diakses oleh controller
     c.set('user', user);
     c.set('profile', profile);
+    c.set('supabase', userClient);
 
     await next();
   } catch (error: any) {
@@ -108,9 +139,28 @@ export const optionalAuthMiddleware = async (c: Context, next: Next) => {
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
       if (token) {
-        const { data: { user } } = await supabase.auth.getUser(token);
+        // Create a request-specific userClient with the token
+        const { createClient } = await import('@supabase/supabase-js');
+        const userClient = createClient(
+          process.env.SUPABASE_URL!,
+          process.env.SUPABASE_ANON_KEY!,
+          {
+            global: {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            },
+            auth: {
+              persistSession: false,
+              autoRefreshToken: false,
+              detectSessionInUrl: false
+            }
+          }
+        );
+
+        const { data: { user } } = await userClient.auth.getUser(token);
         if (user) {
-          const { data: profile } = await supabase
+          const { data: profile } = await supabaseAdmin
             .from('profiles')
             .select('*')
             .eq('id', user.id)
@@ -119,27 +169,14 @@ export const optionalAuthMiddleware = async (c: Context, next: Next) => {
           if (profile) {
             if ((profile.role === 'user' || !profile.role) && user.email?.toLowerCase().endsWith('@komunitas.id')) {
               profile.role = 'superadmin';
-              try {
-                const { createClient } = await import('@supabase/supabase-js');
-                const userClient = createClient(
-                  process.env.SUPABASE_URL!,
-                  process.env.SUPABASE_ANON_KEY!,
-                  {
-                    global: {
-                      headers: {
-                        Authorization: `Bearer ${token}`,
-                      },
-                    },
-                  }
-                );
-                userClient.from('profiles').update({ role: 'superadmin' }).eq('id', user.id).then(({ error }) => {
-                  if (error) logger.error('❌ Failed to auto-heal in optionalAuthMiddleware:', error);
-                });
-              } catch (err) {}
+              supabaseAdmin.from('profiles').update({ role: 'superadmin' }).eq('id', user.id).then(({ error }) => {
+                if (error) logger.error('❌ Failed to auto-heal in optionalAuthMiddleware:', error);
+              });
             }
           }
           c.set('user', user);
           c.set('profile', profile);
+          c.set('supabase', userClient);
         }
       }
     }

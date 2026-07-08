@@ -357,6 +357,14 @@ export const adminService = {
   },
 
   /**
+   * Menganalisis dokumen panduan layanan menggunakan AI
+   */
+  parseServiceDocument: async (text: string): Promise<{ success: boolean; data: any }> => {
+    const response = await api.post<{ success: boolean; data: any }>('/api/services/parse-doc', { text })
+    return response.data
+  },
+
+  /**
    * Hapus layanan publik (RAG)
    */
   deleteService: async (id: string): Promise<{ success: boolean; message: string }> => {

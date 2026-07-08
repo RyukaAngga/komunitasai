@@ -164,7 +164,7 @@ export function AllReports() {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans flex flex-col relative overflow-hidden bg-dot-pattern">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 font-sans flex flex-col relative overflow-x-hidden bg-dot-pattern">
       {/* Background radial glow */}
       <div className="pointer-events-none absolute -left-40 -top-40 h-[600px] w-[600px] rounded-full bg-zinc-900/10 blur-[150px]" />
       <div className="pointer-events-none absolute -right-40 -bottom-40 h-[600px] w-[600px] rounded-full bg-zinc-900/10 blur-[150px]" />

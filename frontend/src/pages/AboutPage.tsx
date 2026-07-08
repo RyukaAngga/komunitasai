@@ -11,13 +11,21 @@ import {
   ChevronDown,
   MessageSquare,
   Camera,
-  ArrowRight
+  ArrowRight,
+  Sparkles,
+  Compass,
+  CheckCircle2,
+  Lock,
+  Eye,
+  Info
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import Footer4Col from '@/components/ui/footer-column'
 import { useChatStore } from '@/store/chatStore'
+import { useAuthStore } from '@/store/authStore'
+import { useToast } from '@/components/ui/toast'
+import Footer4Col from '@/components/ui/footer-column'
 
-// ─── TABS DEFINITION ─────────────────────────────────────────────────────────
+// Tabs definitions
 const tabs = [
   { id: 'visi', label: 'Visi & Misi', icon: Target },
   { id: 'panduan', label: 'Panduan Pengguna', icon: BookOpen },
@@ -26,7 +34,7 @@ const tabs = [
   { id: 'syarat', label: 'Syarat Layanan', icon: Scale },
 ]
 
-// ─── USER GUIDE STEPS ────────────────────────────────────────────────────────
+// Guide steps content
 const guideSteps = [
   {
     icon: MessageSquare,
@@ -34,8 +42,8 @@ const guideSteps = [
     description: 'Buka halaman obrolan utama untuk menanyakan informasi birokrasi, hukum, bantuan sosial, atau administrasi daerah.',
     tips: [
       'Gunakan bahasa sehari-hari yang mudah dipahami',
-      'Sebutkan nama daerah Anda agar AI memberikan jawaban lebih akurat',
-      'Asisten AI kami aktif selama 24 jam penuh setiap hari'
+      'Sebutkan nama daerah Anda agar AI memberikan jawaban lebih spesifik',
+      'Asisten AI aktif selama 24 jam penuh setiap hari'
     ]
   },
   {
@@ -55,7 +63,7 @@ const guideSteps = [
     tips: [
       'Masukkan dokumen penting yang ingin Anda pelajari poin pentingnya',
       'Sistem akan merender diagram alir jika dokumen memuat alur proses',
-      'Hemat waktu membaca hingga 90% dibanding membaca manual'
+      'Menghemat waktu membaca hingga 90% dibanding membaca manual'
     ]
   },
   {
@@ -70,7 +78,7 @@ const guideSteps = [
   }
 ]
 
-// ─── FAQS ───────────────────────────────────────────────────────────────────
+// FAQ content
 const faqs = [
   {
     q: 'Bagaimana cara menggunakan layanan KOMUNITAS?',
@@ -94,22 +102,22 @@ const faqs = [
   }
 ]
 
-// ─── ACCORDION ITEM COMPONENT ────────────────────────────────────────────────
+// FAQ Accordion Item
 function FAQItem({ question, answer }: { question: string; answer: string }) {
   const [isOpen, setIsOpen] = useState(false)
   return (
-    <div className="border-b border-zinc-800/60 py-3">
+    <div className="border border-zinc-900 bg-zinc-950/20 rounded-xl p-1 overflow-hidden transition-all duration-300 hover:border-zinc-800/80 hover:bg-zinc-950/40">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between text-left py-3.5 text-[13.5px] font-medium text-zinc-200 hover:text-white transition-colors duration-200 cursor-pointer"
+        className="w-full flex items-center justify-between text-left p-4 text-[13.5px] font-medium text-zinc-200 hover:text-white transition-colors duration-200 cursor-pointer"
       >
-        <span>{question}</span>
+        <span className="pr-4">{question}</span>
         <motion.div
           animate={{ rotate: isOpen ? 180 : 0 }}
-          transition={{ duration: 0.2 }}
-          className="shrink-0 ml-4"
+          transition={{ duration: 0.25, ease: 'easeOut' }}
+          className="shrink-0 p-1 rounded-md bg-zinc-900 border border-zinc-800"
         >
-          <ChevronDown className="w-4 h-4 text-zinc-500" />
+          <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
         </motion.div>
       </button>
       <AnimatePresence initial={false}>
@@ -118,12 +126,11 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: 'easeInOut' }}
-            className="overflow-hidden"
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
           >
-            <p className="text-[12.5px] text-zinc-400 leading-relaxed pb-4 font-light">
+            <div className="px-4 pb-4 pt-1 text-[12.5px] text-zinc-400 leading-relaxed font-light border-t border-zinc-900/50 mt-1">
               {answer}
-            </p>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -131,13 +138,21 @@ function FAQItem({ question, answer }: { question: string; answer: string }) {
   )
 }
 
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────
 export function AboutPage() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const [activeTab, setActiveTab] = useState('visi')
   const { createSession, setCurrentSession } = useChatStore()
+  
+  const { isAuthenticated, user, logout, checkMe } = useAuthStore()
+  const { toast } = useToast()
+
+  useEffect(() => {
+    if (isAuthenticated && !user) {
+      checkMe().catch(err => console.error('Sesi gagal dimuat:', err))
+    }
+  }, [isAuthenticated, user, checkMe])
 
   useEffect(() => {
     if (tabParam && ['visi', 'panduan', 'faq', 'kebijakan', 'syarat'].includes(tabParam)) {
@@ -156,22 +171,22 @@ export function AboutPage() {
     navigate('/chat')
   }
 
-  // Content animation variants
-  const contentVariants = {
-    hidden: { opacity: 0, y: 12 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.35, ease: 'easeOut' as const } },
-    exit: { opacity: 0, y: -10, transition: { duration: 0.2, ease: 'easeIn' as const } }
-  }
-
   return (
-    <div className="min-h-screen bg-[#060608] text-zinc-100 flex flex-col relative overflow-x-hidden bg-noise">
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 flex flex-col relative overflow-x-hidden">
       
-      {/* ── Header ── */}
+      {/* Background decoration grid and ambient radial light */}
+      <div className="pointer-events-none fixed inset-0 z-0">
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#0c0c0e_1px,transparent_1px),linear-gradient(to_bottom,#0c0c0e_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-70" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[400px] bg-emerald-500/[0.03] rounded-full blur-[120px]" />
+        <div className="absolute top-[40%] right-[10%] w-[600px] h-[400px] bg-indigo-500/[0.02] rounded-full blur-[100px]" />
+      </div>
+
+      {/* ── Header / Navbar ── */}
       <motion.header
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className="fixed top-0 left-0 right-0 z-50 h-[60px] px-6 md:px-10 flex items-center justify-between border-b border-zinc-800/80 bg-zinc-950/85 backdrop-blur-md shadow-[0_4px_20px_rgba(0,0,0,0.4)]"
+        className="fixed top-0 left-0 right-0 z-50 h-[60px] px-6 md:px-10 flex items-center justify-between border-b border-zinc-900 bg-zinc-950/80 backdrop-blur-md shadow-[0_4px_30px_rgba(0,0,0,0.8)]"
       >
         {/* Brand logo & name */}
         <div 
@@ -183,7 +198,7 @@ export function AboutPage() {
         </div>
 
         {/* Navigation links */}
-        <nav className="hidden md:flex items-center gap-7">
+        <nav className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-7">
           <button
             className="text-[13px] text-zinc-400 hover:text-zinc-100 transition-colors tracking-[-0.01em] cursor-pointer"
             onClick={() => {
@@ -207,6 +222,12 @@ export function AboutPage() {
             Verifikasi
           </button>
           <button
+            className="text-[13px] text-zinc-400 hover:text-zinc-100 transition-colors tracking-[-0.01em] cursor-pointer"
+            onClick={() => navigate('/all-reports')}
+          >
+            Semua Aduan
+          </button>
+          <button
             className="text-[13px] text-zinc-100 font-semibold transition-colors tracking-[-0.01em] cursor-pointer"
             onClick={() => handleTabChange('visi')}
           >
@@ -214,32 +235,95 @@ export function AboutPage() {
           </button>
         </nav>
 
-        {/* Action button */}
-        <Button
-          onClick={handleStartChat}
-          className="h-8 px-4 text-[12px] font-medium rounded-md tracking-[-0.01em] transition-all active:scale-[0.97] bg-white hover:bg-zinc-100 text-zinc-900 shadow-none cursor-pointer"
-        >
-          Mulai Percakapan
-        </Button>
+        {/* Action buttons */}
+        <div className="flex items-center gap-3">
+          {isAuthenticated && user ? (
+            <div className="flex items-center gap-3">
+              {/* User profile info */}
+              <div className="hidden md:flex flex-col items-end text-right select-none">
+                <span className="text-[12px] font-bold tracking-tight text-zinc-100">
+                  {user.nama_panggilan || user.nama_lengkap}
+                </span>
+                <span className="text-[9px] uppercase font-mono text-zinc-500 font-semibold tracking-wider leading-none mt-0.5">
+                  [{user.role}]
+                </span>
+              </div>
+              
+              {/* Logout Button */}
+              <button
+                onClick={() => {
+                  logout()
+                  toast({ title: 'Sesi Berakhir', description: 'Anda telah berhasil keluar dari sistem.', type: 'info' })
+                }}
+                className="h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border bg-zinc-900 hover:bg-zinc-850 text-zinc-200 border-zinc-800 transition-all duration-300 active:scale-[0.97] cursor-pointer"
+              >
+                Keluar
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => navigate('/login')}
+                className="h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border bg-zinc-900 hover:bg-zinc-850 text-zinc-200 border-zinc-800 transition-all duration-300 active:scale-[0.97] cursor-pointer"
+              >
+                Masuk
+              </button>
+              <button
+                onClick={() => navigate('/register')}
+                className="h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border bg-white hover:bg-zinc-100 text-zinc-950 border-white transition-all duration-300 active:scale-[0.97] cursor-pointer"
+              >
+                Daftar
+              </button>
+            </div>
+          )}
+          
+          <Button
+            onClick={handleStartChat}
+            className="h-8 px-4 text-[12px] font-medium rounded-md tracking-[-0.01em] transition-all duration-300 active:scale-[0.97] shadow-none cursor-pointer bg-zinc-900 border border-zinc-800 hover:bg-zinc-850 hover:text-white"
+          >
+            Mulai Percakapan
+          </Button>
+        </div>
       </motion.header>
 
       {/* ── Main Content Container ── */}
       <main className="relative z-10 flex-1 max-w-4xl w-full mx-auto px-6 pt-24 pb-28 flex flex-col gap-10">
         
         {/* ── Hero Section ── */}
-        <section className="text-center space-y-4 max-w-2xl mx-auto pt-4">
-          <h1 className="text-[28px] md:text-[36px] font-bold text-zinc-100 tracking-[-0.03em] leading-tight">
+        <section className="text-center space-y-4 max-w-2xl mx-auto pt-6">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-emerald-500/25 bg-emerald-500/[0.05] text-[11px] font-medium text-emerald-400 select-none"
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Pusat Informasi & Panduan Layanan</span>
+          </motion.div>
+
+          <motion.h1 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.05, ease: 'easeOut' }}
+            className="text-[32px] md:text-[44px] font-extrabold text-zinc-100 tracking-[-0.03em] leading-none"
+          >
             Tentang KOMUNITAS
-          </h1>
-          <p className="text-[13.5px] text-zinc-400 font-light leading-relaxed">
-            Platform pelayanan publik dan asisten AI terpadu untuk warga Indonesia. Temukan panduan lengkap penggunaan, visi misi kami, serta jawaban atas pertanyaan umum Anda.
-          </p>
+          </motion.h1>
+          
+          <motion.p 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+            className="text-[13.5px] md:text-[14.5px] text-zinc-400 font-light leading-relaxed"
+          >
+            Portal asisten AI terpadu yang dirancang untuk mempermudah akses informasi birokrasi, verifikasi kebenaran berita, serta memfasilitasi pelaporan masalah fasilitas publik bagi seluruh warga Indonesia.
+          </motion.p>
         </section>
 
         {/* ── Tabs Navigation Row ── */}
         <section className="w-full">
-          <div className="w-full overflow-x-auto scrollbar-none border border-zinc-800/80 p-1 bg-zinc-900/30 backdrop-blur-sm rounded-xl">
-            <div className="flex flex-nowrap gap-1 w-full">
+          <div className="w-full border border-zinc-900 bg-zinc-950/60 backdrop-blur-md p-1.5 rounded-2xl">
+            <div className="flex flex-wrap md:flex-nowrap gap-1 w-full relative">
               {tabs.map((tab) => {
                 const Icon = tab.icon
                 const isActive = activeTab === tab.id
@@ -247,14 +331,21 @@ export function AboutPage() {
                   <button
                     key={tab.id}
                     onClick={() => handleTabChange(tab.id)}
-                    className={`flex items-center justify-center gap-2 py-2 px-3.5 text-[12.5px] font-medium rounded-lg transition-all duration-150 cursor-pointer whitespace-nowrap flex-1 min-w-max ${
+                    className={`relative flex items-center justify-center gap-2.5 py-2.5 px-4 text-[12.5px] font-medium rounded-xl transition-all duration-300 cursor-pointer whitespace-nowrap flex-1 min-w-max z-10 ${
                       isActive
-                        ? 'bg-zinc-800 text-zinc-100 border border-zinc-700/50 shadow-sm'
-                        : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-900/20'
+                        ? 'text-zinc-100 font-semibold'
+                        : 'text-zinc-500 hover:text-zinc-300'
                     }`}
                   >
-                    <Icon className="w-3.5 h-3.5 shrink-0" />
+                    <Icon className="w-4 h-4 shrink-0" />
                     <span>{tab.label}</span>
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeTabIndicator"
+                        className="absolute inset-0 bg-zinc-900 border border-zinc-800 rounded-xl -z-10"
+                        transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                      />
+                    )}
                   </button>
                 )
               })}
@@ -263,22 +354,25 @@ export function AboutPage() {
         </section>
 
         {/* ── Tab Content Box ── */}
-        <section className="w-full min-h-[460px] bg-zinc-900/10 border border-zinc-800/80 rounded-xl p-6 md:p-10 backdrop-blur-sm">
+        <section className="w-full min-h-[460px] bg-zinc-950/40 border border-zinc-900 rounded-2xl p-6 md:p-10 backdrop-blur-md relative overflow-hidden">
+          {/* Subtle interior glow in content area */}
+          <div className="absolute top-0 right-0 w-[300px] h-[300px] bg-emerald-500/[0.015] rounded-full blur-[80px] pointer-events-none" />
+          
           <AnimatePresence mode="wait">
             
             {/* ── Tab VISI & MISI ── */}
             {activeTab === 'visi' && (
               <motion.div
                 key="visi"
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                variants={contentVariants}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
                 className="space-y-8"
               >
-                <div className="space-y-2.5">
-                  <h2 className="text-[16px] font-semibold text-zinc-100 flex items-center gap-2">
-                    <Target className="w-4 h-4 text-zinc-400" />
+                <div className="space-y-2">
+                  <h2 className="text-[17px] font-bold text-zinc-100 flex items-center gap-2.5 tracking-tight">
+                    <Compass className="w-5 h-5 text-emerald-500" />
                     Visi & Misi Kami
                   </h2>
                   <p className="text-[12.5px] text-zinc-400 leading-relaxed font-light">
@@ -286,16 +380,19 @@ export function AboutPage() {
                   </p>
                 </div>
 
-                <div className="bg-zinc-900/20 border border-zinc-800/60 rounded-xl p-8 space-y-3 relative overflow-hidden">
-                  <span className="text-[9.5px] font-semibold text-zinc-500 uppercase tracking-wider block">Visi Utama</span>
-                  <p className="text-[16px] md:text-[18px] text-zinc-200 leading-relaxed font-light tracking-[-0.015em] max-w-3xl">
+                <div className="bg-zinc-950/80 border border-zinc-900 rounded-xl p-8 space-y-4 relative overflow-hidden shadow-2xl">
+                  {/* Subtle blur overlay */}
+                  <div className="absolute inset-0 bg-dot-pattern opacity-10" />
+                  <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-widest block font-mono">Pilar Utama</span>
+                  <p className="text-[16px] md:text-[18px] text-zinc-200 leading-relaxed font-light tracking-[-0.015em] relative z-10">
                     "Menyediakan akses informasi publik yang cepat, transparan, dan terpercaya untuk seluruh warga Indonesia melalui bantuan teknologi kecerdasan buatan."
                   </p>
-                  <span className="text-[9px] text-zinc-650 font-mono tracking-wider block pt-2">KOMUNITAS VISI 2026</span>
                 </div>
 
                 <div className="space-y-4">
-                  <span className="text-[9.5px] font-semibold text-zinc-500 uppercase tracking-wider block">Misi Operasional</span>
+                  <span className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest block font-mono">Misi Strategis</span>
+                  
+                  {/* Asymmetric 2-column list layout */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {[
                       'Membantu warga mendapatkan jawaban cepat seputar syarat administrasi daerah.',
@@ -305,9 +402,9 @@ export function AboutPage() {
                     ].map((m, idx) => (
                       <div 
                         key={idx} 
-                        className="bg-zinc-900/10 border border-zinc-850 hover:border-zinc-800/80 transition-colors p-4 rounded-xl flex items-start gap-3.5"
+                        className="bg-zinc-950/20 border border-zinc-900/60 p-5 rounded-xl flex items-start gap-4 transition-all duration-300 hover:border-zinc-800/80 hover:bg-zinc-950/40"
                       >
-                        <div className="w-5 h-5 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[10px] text-zinc-400 shrink-0 font-mono mt-0.5">
+                        <div className="w-6 h-6 rounded-lg bg-zinc-900 border border-zinc-800 flex items-center justify-center text-[11px] text-zinc-300 shrink-0 font-bold font-mono">
                           {idx + 1}
                         </div>
                         <p className="text-[12.5px] text-zinc-400 leading-relaxed font-light">
@@ -324,49 +421,57 @@ export function AboutPage() {
             {activeTab === 'panduan' && (
               <motion.div
                 key="panduan"
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                variants={contentVariants}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
                 className="space-y-8"
               >
                 <div className="space-y-2">
-                  <h2 className="text-[16px] font-semibold text-zinc-100 flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-zinc-400" />
+                  <h2 className="text-[17px] font-bold text-zinc-100 flex items-center gap-2.5 tracking-tight">
+                    <BookOpen className="w-5 h-5 text-emerald-500" />
                     Panduan Pengguna
                   </h2>
                   <p className="text-[12.5px] text-zinc-400 leading-relaxed font-light">
-                    Pelajari langkah mudah menggunakan fitur-fitur unggulan yang tersedia di platform kami.
+                    Pelajari langkah mudah menggunakan empat pilar fitur utama yang tersedia di platform kami.
                   </p>
                 </div>
 
-                <div className="relative border-l border-zinc-800 pl-6 ml-4 space-y-8 py-2">
+                {/* Customized Timeline */}
+                <div className="relative border-l border-zinc-900 pl-6 ml-4 space-y-10 py-2">
                   {guideSteps.map((step, idx) => {
                     const StepIcon = step.icon
                     return (
                       <div 
                         key={idx}
-                        className="relative group transition-all duration-300"
+                        className="relative group"
                       >
-                        {/* Bullet step number indicator */}
-                        <div className="absolute -left-[35px] top-1.5 w-6 h-6 rounded-full bg-[#060608] border border-zinc-800 flex items-center justify-center group-hover:border-zinc-700 transition-colors shrink-0">
-                          <span className="text-[11px] font-bold text-zinc-400 group-hover:text-zinc-200">{idx + 1}</span>
+                        {/* Timeline bubble node indicator */}
+                        <div className="absolute -left-[37px] top-1 w-5.5 h-5.5 rounded-full bg-zinc-950 border border-zinc-900 flex items-center justify-center group-hover:border-emerald-500/50 group-hover:bg-zinc-900 transition-all duration-300 shrink-0 shadow-lg">
+                          <span className="text-[10px] font-bold text-zinc-500 group-hover:text-emerald-400 font-mono">{idx + 1}</span>
                         </div>
 
                         <div className="space-y-3">
-                          <div className="flex items-center gap-3">
-                            <StepIcon className="w-4 h-4 text-zinc-400 group-hover:text-zinc-200 transition-colors" />
-                            <h3 className="text-[14px] font-semibold text-zinc-200 tracking-[-0.01em]">
+                          <div className="flex items-center gap-2.5">
+                            <div className="p-1.5 rounded-md bg-zinc-900 border border-zinc-800 text-zinc-400 group-hover:text-emerald-400 group-hover:border-emerald-500/20 transition-all duration-300">
+                              <StepIcon className="w-4 h-4" />
+                            </div>
+                            <h3 className="text-[14px] font-bold text-zinc-200 tracking-tight group-hover:text-zinc-100 transition-colors">
                               {step.title}
                             </h3>
                           </div>
+                          
                           <p className="text-[12.5px] text-zinc-400 leading-relaxed font-light max-w-2xl">
                             {step.description}
                           </p>
+
                           <div className="flex flex-wrap gap-2 pt-1.5">
                             {step.tips.map((tip, tipIdx) => (
-                              <div key={tipIdx} className="bg-zinc-900/40 border border-zinc-850 rounded px-2.5 py-1 text-[11px] text-zinc-500 hover:text-zinc-400 hover:border-zinc-800 transition-colors flex items-center gap-1.5 font-light">
-                                <span className="w-1.5 h-1.5 rounded-full bg-zinc-650" />
+                              <div 
+                                key={tipIdx} 
+                                className="bg-zinc-950/65 border border-zinc-900 rounded-lg px-3 py-1.5 text-[11px] text-zinc-500 hover:text-zinc-400 hover:border-zinc-800 transition-all duration-300 flex items-center gap-2 font-light"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-zinc-800" />
                                 <span>{tip}</span>
                               </div>
                             ))}
@@ -383,23 +488,23 @@ export function AboutPage() {
             {activeTab === 'faq' && (
               <motion.div
                 key="faq"
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                variants={contentVariants}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
                 className="space-y-6"
               >
                 <div className="space-y-2">
-                  <h2 className="text-[16px] font-semibold text-zinc-100 flex items-center gap-2">
-                    <HelpCircle className="w-4 h-4 text-zinc-400" />
-                    Pertanyaan yang Sering Diajukan (FAQ)
+                  <h2 className="text-[17px] font-bold text-zinc-100 flex items-center gap-2.5 tracking-tight">
+                    <HelpCircle className="w-5 h-5 text-emerald-500" />
+                    Pertanyaan yang Sering Diajukan
                   </h2>
                   <p className="text-[12.5px] text-zinc-400 leading-relaxed font-light">
-                    Temukan jawaban atas kendala dan informasi dasar yang sering ditanyakan oleh para pengguna platform kami.
+                    Temukan jawaban atas kendala dan pertanyaan mendasar yang sering diajukan oleh pengguna platform kami.
                   </p>
                 </div>
 
-                <div className="space-y-1 pt-2 max-w-3xl">
+                <div className="space-y-3 pt-2 max-w-3xl">
                   {faqs.map((faq, idx) => (
                     <FAQItem key={idx} question={faq.q} answer={faq.a} />
                   ))}
@@ -411,55 +516,65 @@ export function AboutPage() {
             {activeTab === 'kebijakan' && (
               <motion.div
                 key="kebijakan"
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                variants={contentVariants}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
                 className="space-y-8"
               >
                 <div className="space-y-3">
-                  <h2 className="text-[16px] font-semibold text-zinc-100 flex items-center gap-2">
-                    <Shield className="w-4 h-4 text-zinc-400" />
+                  <h2 className="text-[17px] font-bold text-zinc-100 flex items-center gap-2.5 tracking-tight">
+                    <Shield className="w-5 h-5 text-emerald-500" />
                     Kebijakan Privasi
                   </h2>
-                  <p className="text-[11px] text-zinc-550 font-mono uppercase tracking-wider">
-                    Pembaruan Terakhir: 24 Juni 2026
-                  </p>
+                  <span className="inline-block text-[9px] font-bold text-zinc-500 font-mono tracking-widest uppercase border border-zinc-900 px-2 py-0.5 rounded">
+                    Pembaruan: 24 Juni 2026
+                  </span>
                   <p className="text-[12.5px] text-zinc-400 leading-relaxed font-light max-w-2xl">
                     Kebijakan Privasi ini menjelaskan bagaimana platform KOMUNITAS mengumpulkan, melindungi, dan menggunakan informasi Anda saat menggunakan layanan kami. Kami berkomitmen menjaga keamanan data pribadi warga sesuai dengan undang-undang perlindungan data yang berlaku di Indonesia.
                   </p>
                 </div>
 
-                <div className="h-px bg-zinc-800/80" />
+                <div className="h-[1px] bg-zinc-900/60" />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                   {[
                     {
+                      icon: Compass,
                       title: 'Pengumpulan Data',
                       desc: 'Kami hanya mengumpulkan data yang Anda berikan secara sadar dan sukarela, seperti nomor telepon, gambar visual aduan, serta koordinat lokasi GPS saat menggunakan fitur Laporan Warga.'
                     },
                     {
+                      icon: Target,
                       title: 'Penggunaan Data',
                       desc: 'Data yang masuk digunakan sepenuhnya untuk memvalidasi laporan aduan Anda, memetakannya pada GIS Admin daerah, dan memberikan respon asisten AI yang akurat.'
                     },
                     {
+                      icon: Lock,
                       title: 'Perlindungan & Kerahasiaan',
                       desc: 'Semua berkas aduan dan informasi warga disimpan dalam database aman terenkripsi di server kami. Kami tidak pernah menjual atau membagikan data Anda kepada pihak ketiga tanpa izin resmi.'
                     },
                     {
+                      icon: Eye,
                       title: 'Izin Perangkat',
                       desc: 'Fitur pelaporan membutuhkan izin akses kamera browser untuk mengambil foto asli kejadian dan izin lokasi GPS untuk memetakan pin koordinat laporan secara presisi.'
                     }
-                  ].map((item, idx) => (
-                    <div key={idx} className="space-y-2 pl-3.5 border-l border-zinc-800 hover:border-zinc-700 transition-colors">
-                      <h3 className="text-[13px] font-semibold text-zinc-200">
-                        {item.title}
-                      </h3>
-                      <p className="text-[12px] text-zinc-400 leading-relaxed font-light">
-                        {item.desc}
-                      </p>
-                    </div>
-                  ))}
+                  ].map((item, idx) => {
+                    const ItemIcon = item.icon
+                    return (
+                      <div key={idx} className="space-y-2 p-5 rounded-xl border border-zinc-950 bg-zinc-950/20 hover:border-zinc-900 transition-colors">
+                        <div className="flex items-center gap-2 text-zinc-300">
+                          <ItemIcon className="w-4 h-4 text-emerald-500" />
+                          <h3 className="text-[13px] font-bold">
+                            {item.title}
+                          </h3>
+                        </div>
+                        <p className="text-[12px] text-zinc-400 leading-relaxed font-light">
+                          {item.desc}
+                        </p>
+                      </div>
+                    )
+                  })}
                 </div>
               </motion.div>
             )}
@@ -468,55 +583,65 @@ export function AboutPage() {
             {activeTab === 'syarat' && (
               <motion.div
                 key="syarat"
-                initial="hidden"
-                animate="visible"
-                exit="exit"
-                variants={contentVariants}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
                 className="space-y-8"
               >
                 <div className="space-y-3">
-                  <h2 className="text-[16px] font-semibold text-zinc-100 flex items-center gap-2">
-                    <Scale className="w-4 h-4 text-zinc-400" />
+                  <h2 className="text-[17px] font-bold text-zinc-100 flex items-center gap-2.5 tracking-tight">
+                    <Scale className="w-5 h-5 text-emerald-500" />
                     Syarat Ketentuan Layanan
                   </h2>
-                  <p className="text-[11px] text-zinc-550 font-mono uppercase tracking-wider">
-                    Pembaruan Terakhir: 24 Juni 2026
-                  </p>
+                  <span className="inline-block text-[9px] font-bold text-zinc-500 font-mono tracking-widest uppercase border border-zinc-900 px-2 py-0.5 rounded">
+                    Pembaruan: 24 Juni 2026
+                  </span>
                   <p className="text-[12.5px] text-zinc-400 leading-relaxed font-light max-w-2xl">
-                    Dengan accessing dan menggunakan platform KOMUNITAS, Anda setuju untuk terikat oleh Syarat Ketentuan Layanan ini. Harap baca seluruh aturan berikut dengan bijak.
+                    Dengan mengakses dan menggunakan platform KOMUNITAS, Anda setuju untuk terikat oleh Syarat Ketentuan Layanan ini. Harap baca seluruh aturan berikut dengan bijak.
                   </p>
                 </div>
 
-                <div className="h-px bg-zinc-800/80" />
+                <div className="h-[1px] bg-zinc-900/60" />
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                   {[
                     {
+                      icon: CheckCircle2,
                       title: 'Kelayakan Layanan',
                       desc: 'Layanan ini disediakan gratis untuk warga Indonesia. Setiap pengguna wajib menyampaikan informasi yang benar dan tidak bermaksud merusak ketertiban umum.'
                     },
                     {
+                      icon: Lock,
                       title: 'Batasan Penggunaan',
                       desc: 'Dilarang keras menyebarkan berita bohong (hoaks) yang disengaja, konten fitnah, pornografi, kebencian bermuansa SARA, atau ancaman kekerasan melalui layanan aduan.'
                     },
                     {
+                      icon: Info,
                       title: 'Tanggung Jawab Jawaban AI',
                       desc: 'Jawaban dari asisten AI diproses otomatis berdasarkan rujukan data pemerintah. Jawaban ini digunakan sebagai panduan awal dan bukan pengganti saran resmi perundang-undangan.'
                     },
                     {
+                      icon: Shield,
                       title: 'Penangguhan Layanan',
                       desc: 'Kami berhak menonaktifkan akun atau memblokir akses pengguna yang menyalahgunakan layanan ini secara berulang untuk kepentingan yang melanggar hukum.'
                     }
-                  ].map((item, idx) => (
-                    <div key={idx} className="space-y-2 pl-3.5 border-l border-zinc-800 hover:border-zinc-700 transition-colors">
-                      <h3 className="text-[13px] font-semibold text-zinc-200">
-                        {item.title}
-                      </h3>
-                      <p className="text-[12px] text-zinc-400 leading-relaxed font-light">
-                        {item.desc}
-                      </p>
-                    </div>
-                  ))}
+                  ].map((item, idx) => {
+                    const ItemIcon = item.icon
+                    return (
+                      <div key={idx} className="space-y-2 p-5 rounded-xl border border-zinc-950 bg-zinc-950/20 hover:border-zinc-900 transition-colors">
+                        <div className="flex items-center gap-2 text-zinc-300">
+                          <ItemIcon className="w-4 h-4 text-emerald-500" />
+                          <h3 className="text-[13px] font-bold">
+                            {item.title}
+                          </h3>
+                        </div>
+                        <p className="text-[12px] text-zinc-400 leading-relaxed font-light">
+                          {item.desc}
+                        </p>
+                      </div>
+                    )
+                  })}
                 </div>
               </motion.div>
             )}
@@ -525,19 +650,19 @@ export function AboutPage() {
         </section>
 
         {/* ── Call To Action Box ── */}
-        <section className="bg-zinc-900/30 border border-zinc-800/80 rounded-xl p-7 flex flex-col sm:flex-row items-center justify-between gap-5 hover:border-zinc-850 transition-all duration-300">
+        <section className="bg-zinc-950/40 border border-zinc-900 rounded-2xl p-8 flex flex-col sm:flex-row items-center justify-between gap-6 hover:border-zinc-800 transition-all duration-300 shadow-xl">
           <div className="space-y-1 text-center sm:text-left">
-            <h3 className="text-[14px] font-semibold text-zinc-100 tracking-[-0.02em]">Butuh Bantuan Langsung?</h3>
-            <p className="text-[12px] text-zinc-500 font-light leading-relaxed">
-              Mulai konsultasi langsung dengan asisten AI kami mengenai berbagai prosedur birokrasi.
+            <h3 className="text-[14.5px] font-bold text-zinc-100 tracking-tight">Butuh Asistensi Birokrasi Langsung?</h3>
+            <p className="text-[12.5px] text-zinc-500 font-light leading-relaxed max-w-md">
+              Dapatkan jawaban instan dan akurat mengenai berbagai prosedur pelayanan masyarakat dengan asisten pintar kami.
             </p>
           </div>
           <button
-            onClick={() => navigate('/chat')}
-            className="flex items-center gap-2 bg-zinc-100 hover:bg-white text-zinc-900 text-[12px] font-medium px-5 py-2.5 rounded-md tracking-[-0.01em] transition-all active:scale-[0.98] cursor-pointer shrink-0"
+            onClick={handleStartChat}
+            className="flex items-center gap-2 bg-zinc-100 hover:bg-white text-zinc-950 text-[12.5px] font-bold px-6 py-3 rounded-xl tracking-tight transition-all active:scale-[0.98] cursor-pointer shrink-0 shadow-lg"
           >
             Mulai Obrolan AI
-            <ArrowRight className="w-3.5 h-3.5" />
+            <ArrowRight className="w-4 h-4" />
           </button>
         </section>
 

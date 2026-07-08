@@ -7,7 +7,7 @@ interface ChatState {
   sessions: ChatSession[]
   currentSessionId: string | null
   isSidebarOpen: boolean
-  createSession: (title?: string) => string
+  createSession: (title?: string, userId?: string | null) => string
   deleteSession: (sessionId: string) => void
   setCurrentSession: (sessionId: string) => void
   renameSession: (sessionId: string, title: string) => void
@@ -24,11 +24,12 @@ export const useChatStore = create<ChatState>()(
       currentSessionId: null,
       isSidebarOpen: true,
 
-      createSession: (title?: string) => {
+      createSession: (title?: string, userId?: string | null) => {
         const { sessions } = get()
-        const emptySession = sessions.find((s) => s.messages.length === 0)
+        // If there's an empty session that matches this userId, reuse it
+        const emptySession = sessions.find((s) => s.messages.length === 0 && (s.userId === userId || (!s.userId && !userId)))
         
-        // Clean up all empty sessions except the one we will reuse
+        // Clean up empty sessions except the matched one
         const cleanedSessions = sessions.filter((s) => s.messages.length > 0 || (emptySession && s.id === emptySession.id))
         
         if (emptySession) {
@@ -44,6 +45,7 @@ export const useChatStore = create<ChatState>()(
           id,
           title: title || `Chat ${new Date().toLocaleDateString('id-ID')}`,
           messages: [],
+          userId: userId || null,
           createdAt: new Date(),
           updatedAt: new Date(),
         }

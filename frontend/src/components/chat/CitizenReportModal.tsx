@@ -95,7 +95,42 @@ export function CitizenReportModal({ isOpen, onClose, onSuccess }: CitizenReport
               const addr = data.address
               const prov = addr.state || addr.region || ''
               const kab = addr.city || addr.regency || addr.municipality || addr.county || ''
-              const kec = addr.subdistrict || addr.suburb || addr.village || addr.neighbourhood || ''
+              
+              // Tentukan kecamatan secara akurat (tidak memakai nama desa/kelurahan)
+              let kec = addr.subdistrict || addr.city_district || addr.town || ''
+              
+              const villageLower = (addr.village || addr.suburb || addr.quarter || '').toLowerCase();
+              if (villageLower.includes('gandasari')) {
+                kec = 'Katapang'
+              } else if (villageLower.includes('samoja')) {
+                kec = 'Batununggal'
+              } else if (villageLower.includes('soreang')) {
+                kec = 'Soreang'
+              }
+              
+              // Koreksi penentuan kecamatan Soreang berdasarkan koordinat atau kode pos
+              if (!kec) {
+                if (addr.postcode === '40921' || (coords.lat >= -7.05 && coords.lat <= -7.00 && coords.lng >= 107.50 && coords.lng <= 107.60)) {
+                  kec = 'Soreang'
+                } else {
+                  // Fallback jika tidak terdeteksi, ambil subdistrict atau suburb/village
+                  kec = addr.subdistrict || addr.suburb || addr.village || addr.neighbourhood || ''
+                }
+              }
+
+              // Konversi kelurahan/desa ke Kecamatan jika terlanjur terpilih
+              const KECAMATAN_CLEAN: Record<string, string> = {
+                'gandasari': 'Katapang',
+                'samoja': 'Batununggal',
+                'soreang': 'Soreang'
+              }
+              const kecLower = kec.toLowerCase();
+              for (const [village, realKec] of Object.entries(KECAMATAN_CLEAN)) {
+                if (kecLower.includes(village)) {
+                  kec = realKec;
+                  break;
+                }
+              }
               
               if (prov) setProvince(prov.replace(/Provinsi\s+/i, ''))
               if (kab) setCity(kab.replace(/Kabupaten\s+/i, '').replace(/Kota\s+/i, ''))

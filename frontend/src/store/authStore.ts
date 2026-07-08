@@ -8,7 +8,6 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `http://${host}:3000`
 export interface UserProfile {
   id: string
   email: string
-  nik: string
   nama_lengkap: string
   nama_panggilan: string
   tanggal_lahir: string

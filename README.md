@@ -14,6 +14,10 @@
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### 📖 Dokumentasi Developer / Developer Documentation
+Untuk detail lengkap seluruh API, parameter, skema database, skema respon, skema WebSocket real-time, dan limitasi sistem, silakan baca:  
+* **[API_DOCUMENTATION.md](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/API_DOCUMENTATION.md)**
+
 ---
 
 ## 📌 Deskripsi Proyek

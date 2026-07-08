@@ -1,7 +1,7 @@
 import { Context } from 'hono';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';
-import { supabase } from '../services/supabaseService';
+import { supabase, supabaseAdmin } from '../services/supabaseService';
 import { logger } from '../utils/logger';
 
 // ─── VALIDATION SCHEMAS ──────────────────────────────────────────────────────
@@ -9,11 +9,12 @@ import { logger } from '../utils/logger';
 const phoneRegex = /^\+62\d{10,13}$/;
 
 export const registerSchema = z.object({
-  email: z.string().email('Format email tidak valid'),
+  email: z.string()
+    .email('Format email tidak valid')
+    .refine(v => /@gmail\.com$/i.test(v), {
+      message: 'Anda harus menggunakan akun Gmail (@gmail.com)',
+    }),
   password: z.string().min(8, 'Password minimal harus 8 karakter'),
-  nik: z.string()
-    .length(16, 'NIK harus tepat 16 digit')
-    .regex(/^\d+$/, 'NIK harus berupa angka saja'),
   nama_lengkap: z.string().min(1, 'Nama lengkap wajib diisi sesuai KTP'),
   nama_panggilan: z.string().min(1, 'Nama panggilan wajib diisi'),
   tanggal_lahir: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal lahir harus YYYY-MM-DD'),
@@ -38,33 +39,17 @@ export const registerController = async (c: Context) => {
 
     logger.info('👤 Registration request for email:', validated.email);
 
-    // 1. Cek duplikasi NIK di database profiles terlebih dahulu
-    const { data: existingNik, error: nikCheckError } = await supabase
-      .from('profiles')
-      .select('nik')
-      .eq('nik', validated.nik)
-      .maybeSingle();
-
-    if (nikCheckError) {
-      logger.error('❌ Error checking NIK duplication:', nikCheckError);
-      return c.json({ error: 'Database error', message: 'Gagal melakukan verifikasi NIK' }, 500);
-    }
-
-    if (existingNik) {
-      return c.json({ 
-        error: 'Registration failed', 
-        message: 'Nomor NIK ini sudah pernah terdaftar' 
-      }, 400);
-    }
-
     const isKomunitasEmail = validated.email.toLowerCase().endsWith('@komunitas.id');
     const assignedRole = isKomunitasEmail ? 'superadmin' : 'user';
 
     // 2. Daftar ke Supabase Auth
+    // emailRedirectTo: URL yang dituju Supabase setelah user klik "Confirm email"
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: validated.email,
       password: validated.password,
       options: {
+        emailRedirectTo: `${frontendUrl}/auth/callback`,
         data: {
           role: assignedRole,
           nama_lengkap: validated.nama_lengkap,
@@ -83,12 +68,11 @@ export const registerController = async (c: Context) => {
     const userId = authData.user.id;
 
     // 3. Masukkan profil tambahan ke tabel profiles
-    const { error: profileError } = await supabase
+    const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .insert({
         id: userId,
         email: validated.email,
-        nik: validated.nik,
         nama_lengkap: validated.nama_lengkap,
         nama_panggilan: validated.nama_panggilan,
         tanggal_lahir: validated.tanggal_lahir,
@@ -185,12 +169,17 @@ export const loginController = async (c: Context) => {
             Authorization: `Bearer ${authData.session.access_token}`,
           },
         },
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false
+        }
       }
     );
 
-    // 2. Ambil profil user dari database profiles menggunakan client terautentikasi (userClient)
-    // agar mematuhi RLS policy yang mengharuskan user terautentikasi
-    const { data: profile, error: profileError } = await userClient
+    // 2. Ambil profil user dari database profiles menggunakan client system-level (supabaseAdmin)
+    // untuk bypass RLS recursion
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('*')
       .eq('id', userId)
@@ -221,12 +210,11 @@ export const loginController = async (c: Context) => {
       const defaultRole = isKomunitasEmail ? 'superadmin' : 'user';
       userRole = defaultRole;
       
-      const { data: newProfile, error: createError } = await userClient
+      const { data: newProfile, error: createError } = await supabaseAdmin
         .from('profiles')
         .insert({
           id: userId,
           email: authData.user.email!,
-          nik: '0000000000000000', // placeholder
           nama_lengkap: authData.user.user_metadata?.nama_lengkap || (isKomunitasEmail ? 'Superadmin KOMUNITAS' : 'Pengguna KOMUNITAS'),
           nama_panggilan: authData.user.user_metadata?.nama_panggilan || (isKomunitasEmail ? 'Superadmin' : 'User'),
           nomor_telepon: '+628000000000', // placeholder
@@ -241,7 +229,6 @@ export const loginController = async (c: Context) => {
         userProfile = {
           id: userId,
           email: authData.user.email!,
-          nik: '0000000000000000',
           nama_lengkap: isKomunitasEmail ? 'Superadmin KOMUNITAS' : 'Pengguna KOMUNITAS',
           nama_panggilan: isKomunitasEmail ? 'Superadmin' : 'User',
           nomor_telepon: '+628000000000',
@@ -263,7 +250,7 @@ export const loginController = async (c: Context) => {
         
         if (profile.role !== 'superadmin') {
           logger.info(`🔧 Auto-healing role to 'superadmin' for existing staff profile: ${profile.email}`);
-          userClient
+          supabaseAdmin
             .from('profiles')
             .update({ role: 'superadmin' })
             .eq('id', userId)
@@ -293,7 +280,6 @@ export const loginController = async (c: Context) => {
         email: authData.user.email,
         nama_lengkap: userProfile?.nama_lengkap || 'Pengguna KOMUNITAS',
         nama_panggilan: userProfile?.nama_panggilan || 'User',
-        nik: userProfile?.nik || '',
         nomor_telepon: userProfile?.nomor_telepon || '',
         tanggal_lahir: userProfile?.tanggal_lahir || '',
         role: userRole,
@@ -331,7 +317,6 @@ export const meController = async (c: Context) => {
         email: user.email,
         nama_lengkap: profile?.nama_lengkap || 'Pengguna KOMUNITAS',
         nama_panggilan: profile?.nama_panggilan || 'User',
-        nik: profile?.nik || '',
         nomor_telepon: profile?.nomor_telepon || '',
         tanggal_lahir: profile?.tanggal_lahir || '',
         role: profile?.role || 'user',
@@ -343,22 +328,15 @@ export const meController = async (c: Context) => {
   }
 };
 
-// Schema validasi untuk pembuatan staf baru oleh Admin/Superadmin
 export const createStaffSchema = z.object({
   email: z.string().email('Format email tidak valid'),
   password: z.string().min(8, 'Password minimal harus 8 karakter'),
-  nik: z.string()
-    .length(16, 'NIK harus tepat 16 digit')
-    .regex(/^\d+$/, 'NIK harus berupa angka saja'),
   nama_lengkap: z.string().min(1, 'Nama lengkap wajib diisi sesuai KTP'),
   nama_panggilan: z.string().min(1, 'Nama panggilan wajib diisi'),
-  tanggal_lahir: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Format tanggal lahir harus YYYY-MM-DD'),
+  tanggal_lahir: z.string().optional(),
   nomor_telepon: z.string().regex(/^\+62\d{10,13}$/, 'Format nomor telepon harus diawali dengan +62 dan diikuti 10-13 digit angka').optional(),
   no_hp: z.string().regex(/^\+62\d{10,13}$/, 'Format nomor telepon harus diawali dengan +62 dan diikuti 10-13 digit angka').optional(),
   role: z.enum(['admin', 'petugas'], { message: 'Peran harus berupa admin atau petugas' }),
-}).refine(data => data.nomor_telepon || data.no_hp, {
-  message: 'Salah satu dari nomor_telepon atau no_hp wajib diisi',
-  path: ['nomor_telepon']
 });
 
 /**
@@ -373,24 +351,7 @@ export const createStaffUserController = async (c: Context) => {
 
     logger.info(`👤 Staff creation request by Admin. New user: ${validated.email} with role [${validated.role}]`);
 
-    // 1. Cek duplikasi NIK di database profiles terlebih dahulu
-    const { data: existingNik, error: nikCheckError } = await supabase
-      .from('profiles')
-      .select('nik')
-      .eq('nik', validated.nik)
-      .maybeSingle();
-
-    if (nikCheckError) {
-      logger.error('❌ Error checking NIK duplication:', nikCheckError);
-      return c.json({ error: 'Database error', message: 'Gagal melakukan verifikasi NIK' }, 500);
-    }
-
-    if (existingNik) {
-      return c.json({ 
-        error: 'Staff creation failed', 
-        message: 'Nomor NIK ini sudah pernah terdaftar' 
-      }, 400);
-    }
+    const supabaseClient = c.get('supabase') || supabase;
 
     // 2. Daftar ke Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -413,18 +374,17 @@ export const createStaffUserController = async (c: Context) => {
     }
 
     const userId = authData.user.id;
-    const resolvedPhone = validated.nomor_telepon || validated.no_hp || '';
+    const resolvedPhone = validated.nomor_telepon || validated.no_hp || null;
 
-    // 3. Masukkan profil tambahan ke tabel profiles
-    const { error: profileError } = await supabase
+    // 3. Masukkan profil tambahan ke tabel profiles (menggunakan system-level client 'supabaseAdmin' untuk bypass RLS)
+    const { error: profileError } = await supabaseAdmin
       .from('profiles')
       .insert({
         id: userId,
         email: validated.email,
-        nik: validated.nik,
         nama_lengkap: validated.nama_lengkap,
         nama_panggilan: validated.nama_panggilan,
-        tanggal_lahir: validated.tanggal_lahir,
+        tanggal_lahir: validated.tanggal_lahir || null,
         nomor_telepon: resolvedPhone,
         role: validated.role,
       });
@@ -470,7 +430,7 @@ export const createStaffUserController = async (c: Context) => {
 export const getStaffUsersController = async (c: Context) => {
   try {
     logger.info('👥 Admin: Get staff users list');
-    const { data: staffList, error } = await supabase
+    const { data: staffList, error } = await supabaseAdmin
       .from('profiles')
       .select('*')
       .in('role', ['superadmin', 'admin', 'petugas'])

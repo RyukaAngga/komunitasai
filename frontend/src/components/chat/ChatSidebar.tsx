@@ -21,6 +21,15 @@ interface ChatSidebarProps {
   onSelectReport?: (reportId: string | null) => void
 }
 
+const CATEGORY_LABELS: Record<string, string> = {
+  darurat:    'Darurat',
+  layanan:    'Layanan Publik',
+  hoaks:      'Hoaks/Misinformasi',
+  infrastruktur: 'Infrastruktur',
+  sosial:     'Sosial',
+  lainnya:    'Lainnya',
+}
+
 export function ChatSidebar({ onOpenReportModal, activeReportId, onSelectReport }: ChatSidebarProps) {
   const { 
     sessions, 
@@ -32,6 +41,7 @@ export function ChatSidebar({ onOpenReportModal, activeReportId, onSelectReport 
   } = useChatStore()
 
   const { isAuthenticated, user } = useAuthStore()
+  const filteredSessions = sessions.filter(s => s.userId === user?.id || (!s.userId && !user))
   const [reports, setReports] = useState<CitizenReport[]>([])
   const [loadingReports, setLoadingReports] = useState(false)
 
@@ -107,7 +117,7 @@ export function ChatSidebar({ onOpenReportModal, activeReportId, onSelectReport 
           className="w-full gap-2 h-9 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 font-medium text-[12px] rounded-md transition-all active:scale-[0.98] tracking-[-0.01em]"
           onClick={() => {
             if (onSelectReport) onSelectReport(null) // Switch to AI Chat
-            createSession()
+            createSession(undefined, user?.id)
           }}
         >
           <Plus className="w-3.5 h-3.5" />
@@ -170,12 +180,14 @@ export function ChatSidebar({ onOpenReportModal, activeReportId, onSelectReport 
                       }}
                     >
                       <div className="flex items-center justify-between gap-1.5">
-                        <span className="text-[12px] font-semibold truncate tracking-[-0.01em]">{report.category}</span>
+                        <span className="text-[12px] font-semibold truncate tracking-[-0.01em]">
+                          {CATEGORY_LABELS[report.category] || report.category}
+                        </span>
                         <span className={cn('text-[9px] font-semibold px-1.5 py-0.5 rounded border leading-none', statusColors[currentStatus])}>
                           {currentStatus}
                         </span>
                       </div>
-                      <p className="text-[11px] text-zinc-500 truncate max-w-[190px]">{report.description}</p>
+                      <p className="text-[11px] text-zinc-500 truncate w-full min-w-0">{report.description}</p>
                       <span className="text-[9px] text-zinc-600 font-mono mt-0.5">{formatDate(report.created_at)}</span>
                     </div>
                   )
@@ -192,15 +204,15 @@ export function ChatSidebar({ onOpenReportModal, activeReportId, onSelectReport 
             <span className="text-[10px] uppercase tracking-wider font-semibold font-mono text-zinc-500">Konsultasi AI</span>
           </div>
 
-          {sessions.length === 0 ? (
+          {filteredSessions.length === 0 ? (
             <div className="text-center py-8 px-4 space-y-2">
               <MessageSquare className="w-6 h-6 mx-auto text-zinc-800" />
               <p className="text-[11px] text-zinc-500">Belum ada percakapan</p>
-              <p className="text-[10px] text-zinc-600 leading-relaxed">Mulai dengan menekan "Chat Baru"</p>
+              <p className="text-[10px] text-zinc-650 leading-relaxed">Mulai dengan menekan "Chat Baru"</p>
             </div>
           ) : (
             <div className="space-y-0.5">
-              {sessions.map((session) => {
+              {filteredSessions.map((session) => {
                 const isActive = !activeReportId && currentSessionId === session.id
                 const isEditing = editingSessionId === session.id
 
@@ -252,10 +264,10 @@ export function ChatSidebar({ onOpenReportModal, activeReportId, onSelectReport 
                         />
                       ) : (
                         <>
-                          <div className="text-[12px] font-medium truncate tracking-[-0.01em]">
-                            {session.title || 'Percakapan baru'}
+                          <div className="text-[12px] font-medium truncate tracking-[-0.01em] w-full min-w-0">
+                            {(session.title || 'Percakapan baru').replace(/\*\*/g, '')}
                           </div>
-                          <div className="text-[9.5px] text-zinc-600 mt-0.5 font-mono">
+                          <div className="text-[9.5px] text-zinc-650 mt-0.5 font-mono">
                             {formatDate(session.updatedAt)}
                           </div>
                         </>

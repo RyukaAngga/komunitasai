@@ -241,7 +241,7 @@ export function HomePage() {
   }, [])
 
   const handleStartChat = () => {
-    const id = createSession()
+    const id = createSession(undefined, user?.id)
     setCurrentSession(id)
     navigate('/chat')
   }

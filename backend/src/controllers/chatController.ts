@@ -18,8 +18,10 @@ import {
   saveChatHistory, 
   getChatHistory,
   deleteChatHistory,
-  supabase
+  supabase,
+  supabaseAdmin
 } from '../services/supabaseService';
+import { adminEvents } from '../utils/eventEmitter';
 import { getEmbedding } from '../services/embeddingService';
 import { searchMultiPhase, SearchResultItem } from '../services/searchService';
 import { ChatMessage, ClaimValidationResult, SummaryResult } from '../types';
@@ -28,26 +30,36 @@ import { z } from 'zod';
 import { checkGuardrails, GUARDRAIL_REFUSAL } from '../utils/guardrails';
 import { extractTextFromFile } from '../services/fileExtractService';
 
+// --- Sanitize Helper ---
+
+/**
+ * Strip HTML tags from text to prevent XSS in stored content
+ */
+function stripHtml(input: string): string {
+  return input.replace(/<[^>]*>/g, '').trim();
+}
+
 // --- Validation Schemas ---
 
 /**
  * Schema validasi untuk request chat menggunakan Zod
  */
 const chatSchema = z.object({
-  message: z.string().default(''),
-  sessionId: z.string().optional(),
+  message: z.string().max(10000, 'Pesan terlalu panjang (maks 10000 karakter)').default(''),
+  sessionId: z.string().max(255).optional(),
   image: z.string().optional(),
   mimeType: z.string().optional(),
+  history: z.array(z.any()).optional(),
 });
 
 const validateSchema = z.object({
-  claim: z.string().min(3, 'Klaim terlalu pendek'),
+  claim: z.string().min(1, 'Klaim tidak boleh kosong').max(5000, 'Klaim terlalu panjang (maks 5000 karakter)'),
   image: z.string().optional(),
   mimeType: z.string().optional(),
 });
 
 const summarizeSchema = z.object({
-  text: z.string().min(10, 'Teks terlalu pendek untuk diringkas'),
+  text: z.string().min(1, 'Teks tidak boleh kosong').max(50000, 'Teks terlalu panjang (maks 50000 karakter)'),
 });
 
 const ocrSchema = z.object({
@@ -56,10 +68,18 @@ const ocrSchema = z.object({
 });
 
 export const reportSchema = z.object({
-  reporterName: z.string().min(1, 'Nama pelapor tidak boleh kosong'),
-  reporterContact: z.string().min(1, 'Kontak pelapor tidak boleh kosong'),
+  reporterName: z.string()
+    .min(1, 'Nama pelapor tidak boleh kosong')
+    .max(100, 'Nama pelapor terlalu panjang')
+    .transform(stripHtml),
+  reporterContact: z.string()
+    .min(1, 'Kontak pelapor tidak boleh kosong')
+    .max(100, 'Kontak pelapor terlalu panjang'),
   category: z.string().min(1, 'Kategori tidak boleh kosong'),
-  description: z.string().min(1, 'Deskripsi laporan tidak boleh kosong'),
+  description: z.string()
+    .min(10, 'Deskripsi laporan minimal 10 karakter')
+    .max(5000, 'Deskripsi terlalu panjang (maks 5000 karakter)')
+    .transform(stripHtml),
   sessionId: z.string().optional(),
   latitude: z.number({ message: 'Koordinat lokasi GPS (latitude) wajib disertakan' }),
   longitude: z.number({ message: 'Koordinat lokasi GPS (longitude) wajib disertakan' }),
@@ -79,6 +99,8 @@ export const chatController = async (c: Context) => {
   try {
     const body = await c.req.json();
     const validated = chatSchema.parse(body);
+    const user = c.get('user');
+    const userId = user ? user.id : null;
     
     logger.info('📨 Chat request received:', {
       message: validated.message ? (validated.message.substring(0, 50) + '...') : '',
@@ -171,7 +193,7 @@ export const chatController = async (c: Context) => {
       { role: 'assistant', content: response },
     ];
     
-    await saveChatHistory(sessionId, updatedHistory);
+    await saveChatHistory(sessionId, updatedHistory, userId);
 
     return c.json({
       content: response,
@@ -204,6 +226,8 @@ export const chatStreamController = async (c: Context) => {
   try {
     const body = await c.req.json();
     const validated = chatSchema.parse(body);
+    const user = c.get('user');
+    const userId = user ? user.id : null;
     
     logger.info('📨 Chat streaming request received:', {
       message: validated.message ? (validated.message.substring(0, 50) + '...') : '',
@@ -383,7 +407,7 @@ export const chatStreamController = async (c: Context) => {
           { role: 'assistant', content: assistantContent },
         ];
         
-        await saveChatHistory(sessionId, updatedHistory);
+        await saveChatHistory(sessionId, updatedHistory, userId);
 
         await stream.writeSSE({
           data: JSON.stringify({
@@ -641,26 +665,72 @@ export const summarizeController = async (c: Context) => {
 };
 
 /**
- * Get All Reports Controller - Mengambil semua laporan aduan warga (Admin)
+ * Get Reports Controller - Mengambil semua laporan aduan warga
  * GET /api/reports
  */
 export const getReportsController = async (c: Context) => {
   try {
+    const user = c.get('user');
+    const profile = c.get('profile');
+    const contact = c.req.query('contact');
     const status = c.req.query('status');
+    const province = c.req.query('province');
+    const city = c.req.query('city');
+    const district = c.req.query('district');
     const page = parseInt(c.req.query('page') || '1');
     const limit = parseInt(c.req.query('limit') || '20');
     const offset = (page - 1) * limit;
 
-    logger.info('📋 Admin: Get all reports request', { status, page, limit });
+    logger.info('📋 Get reports request:', { email: user?.email, role: profile?.role, contact, status, province, city, district });
 
-    let query = supabase
+    const supabaseClient = c.get('supabase') || supabase;
+    let query = supabaseClient
       .from('citizen_reports')
       .select('*', { count: 'exact' })
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
+    // Apply role-based and contact filtering
+    if (profile) {
+      if (profile.role === 'user') {
+        // Regular citizen: only see their own reports (by user_id OR contact match)
+        const clauses = [`user_id.eq.${profile.id}`];
+        if (profile.email) clauses.push(`reporter_contact.eq.${profile.email}`);
+        if (profile.nomor_telepon) clauses.push(`reporter_contact.eq.${profile.nomor_telepon}`);
+        query = query.or(clauses.join(','));
+      } else {
+        // Staff/Admin/Superadmin: can see all. If contact filter is supplied, apply it
+        if (contact) {
+          query = query.eq('reporter_contact', contact);
+        }
+      }
+    } else {
+      // Guest: must provide contact, otherwise see nothing
+      if (contact) {
+        query = query.eq('reporter_contact', contact);
+      } else {
+        return c.json({
+          reports: [],
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+        });
+      }
+    }
+
     if (status && status !== 'all') {
       query = query.eq('status', status);
+    }
+
+    if (province && province !== 'all') {
+      query = query.eq('province', province);
+    }
+    if (city && city !== 'all') {
+      query = query.eq('city', city);
+    }
+    if (district && district !== 'all') {
+      query = query.eq('district', district);
     }
 
     const { data, error, count } = await query;
@@ -708,7 +778,8 @@ export const updateReportStatusController = async (c: Context) => {
       updateData.admin_note = adminNote;
     }
 
-    const { data, error } = await supabase
+    const supabaseClient = c.get('supabase') || supabase;
+    const { data, error } = await supabaseClient
       .from('citizen_reports')
       .update(updateData)
       .eq('id', id)
@@ -718,6 +789,10 @@ export const updateReportStatusController = async (c: Context) => {
     if (error) throw error;
 
     logger.info('✅ Report status updated:', id, '->', status);
+
+    // Emit real-time event to refresh admin dashboards
+    adminEvents.emit('broadcast', { type: 'REPORT_UPDATED', id });
+
     return c.json({ report: data, message: `Status laporan berhasil diubah ke "${status}"` });
   } catch (error: any) {
     logger.error('❌ Update report status error:', error);
@@ -736,9 +811,10 @@ export const getDashboardStatsController = async (c: Context) => {
   try {
     logger.info('📊 Admin: Get dashboard stats');
 
+    const supabaseClient = c.get('supabase') || supabase;
     const [reportsResult, chatHistoryResult] = await Promise.all([
-      supabase.from('citizen_reports').select('status', { count: 'exact' }),
-      supabase.from('chat_history').select('session_id', { count: 'exact' }),
+      supabaseClient.from('citizen_reports').select('status, district', { count: 'exact' }),
+      supabaseClient.from('chat_history').select('session_id', { count: 'exact' }),
     ]);
 
     const reports = reportsResult.data || [];
@@ -747,6 +823,13 @@ export const getDashboardStatsController = async (c: Context) => {
 
     const statusCounts = reports.reduce((acc: any, r: any) => {
       acc[r.status] = (acc[r.status] || 0) + 1;
+      return acc;
+    }, {});
+
+    const districtCounts = reports.reduce((acc: any, r: any) => {
+      if (r.district) {
+        acc[r.district] = (acc[r.district] || 0) + 1;
+      }
       return acc;
     }, {});
 
@@ -759,6 +842,7 @@ export const getDashboardStatsController = async (c: Context) => {
         Selesai: statusCounts['Selesai'] || 0,
         Ditolak: statusCounts['Ditolak'] || 0,
       },
+      districtCounts,
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {
@@ -794,7 +878,8 @@ export const createReportController = async (c: Context) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const { data: guestReports, error: countError } = await supabase
+      const supabaseClient = c.get('supabase') || supabase;
+      const { data: guestReports, error: countError } = await supabaseClient
         .from('citizen_reports')
         .select('id')
         .is('user_id', null)
@@ -822,7 +907,8 @@ export const createReportController = async (c: Context) => {
     }
 
     // Simpan aduan warga ke database Supabase (tabel citizen_reports)
-    const { data, error } = await supabase
+    const supabaseClient = c.get('supabase') || supabase;
+    const { data, error } = await supabaseClient
       .from('citizen_reports')
       .insert({
         reporter_name: validated.reporterName,
@@ -847,6 +933,9 @@ export const createReportController = async (c: Context) => {
     }
 
     logger.info('✅ Citizen report created successfully, ID:', data.id);
+
+    // Emit real-time event to refresh admin dashboards
+    adminEvents.emit('broadcast', { type: 'REPORT_CREATED', id: data.id });
 
     return c.json({
       id: data.id,
@@ -878,19 +967,41 @@ export const createReportController = async (c: Context) => {
 export const getHistoryController = async (c: Context) => {
   try {
     const sessionId = c.req.param('sessionId');
+    const user = c.get('user');
     
     if (!sessionId) {
       return c.json({ error: 'Session ID diperlukan' }, 400);
     }
 
-    logger.info('📜 Get history request:', { sessionId });
+    logger.info('📜 Get history request:', { sessionId, user: user?.email });
 
-    const history = await getChatHistory(sessionId) || [];
-    
-    // Tambahkan key 'messages' agar kompatibel dengan HistoryResponse tipe frontend
+    const { data: sessionData, error } = await supabaseAdmin
+      .from('chat_history')
+      .select('messages, user_id')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    if (sessionData) {
+      // Check ownership if session is bound to a user
+      if (sessionData.user_id && (!user || user.id !== sessionData.user_id)) {
+        logger.warn('🚫 Unauthorized access to chat history session:', { sessionId, requestedBy: user?.id, owner: sessionData.user_id });
+        return c.json({ error: 'Unauthorized', message: 'Anda tidak memiliki akses ke percakapan ini.' }, 403);
+      }
+
+      const history = sessionData.messages || [];
+      return c.json({
+        history: history,
+        messages: history,
+        sessionId,
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     return c.json({
-      history: history,
-      messages: history,
+      history: [],
+      messages: [],
       sessionId,
       timestamp: new Date().toISOString(),
     });
@@ -1310,7 +1421,8 @@ export const extractFileController = async (c: Context) => {
 export const getReportsStatisticsController = async (c: Context) => {
   try {
     logger.info('📊 Admin: Get reports statistics');
-    const { data: reports, error } = await supabase
+    const supabaseClient = c.get('supabase') || supabase;
+    const { data: reports, error } = await supabaseClient
       .from('citizen_reports')
       .select('province, city, district, category, status');
 
@@ -1318,11 +1430,13 @@ export const getReportsStatisticsController = async (c: Context) => {
 
     const provinceCounts: Record<string, number> = {};
     const cityCounts: Record<string, number> = {};
+    const districtCounts: Record<string, number> = {};
     const categoryCounts: Record<string, number> = {};
 
     reports?.forEach((r: any) => {
       if (r.province) provinceCounts[r.province] = (provinceCounts[r.province] || 0) + 1;
       if (r.city) cityCounts[r.city] = (cityCounts[r.city] || 0) + 1;
+      if (r.district) districtCounts[r.district] = (districtCounts[r.district] || 0) + 1;
       if (r.category) categoryCounts[r.category] = (categoryCounts[r.category] || 0) + 1;
     });
 
@@ -1330,6 +1444,7 @@ export const getReportsStatisticsController = async (c: Context) => {
       success: true,
       provinces: provinceCounts,
       cities: cityCounts,
+      districts: districtCounts,
       categories: categoryCounts,
       total: reports?.length || 0,
     });
@@ -1346,7 +1461,8 @@ export const getReportsStatisticsController = async (c: Context) => {
 export const getActiveChatsController = async (c: Context) => {
   try {
     logger.info('💬 Admin/Petugas: Get active chats list');
-    const { data: reports, error } = await supabase
+    const supabaseClient = c.get('supabase') || supabase;
+    const { data: reports, error } = await supabaseClient
       .from('citizen_reports')
       .select('*')
       .in('status', ['Menunggu', 'Diproses'])
@@ -1361,5 +1477,69 @@ export const getActiveChatsController = async (c: Context) => {
   } catch (error: any) {
     logger.error('❌ Get active chats list error:', error);
     return c.json({ error: 'Gagal mengambil daftar percakapan aktif', message: error.message }, 500);
+  }
+};
+
+/**
+ * Parse Service Document Controller - Menganalisis dokumen panduan layanan publik menggunakan AI (Gemini 2.5 Flash - Murah & Akurat)
+ * POST /api/services/parse-doc
+ */
+export const parseServiceDocumentController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const { text } = body;
+
+    if (!text || typeof text !== 'string') {
+      return c.json({ error: 'Validasi gagal', message: 'Teks dokumen diperlukan untuk diproses' }, 400);
+    }
+
+    logger.info('📂 Admin: Parsing service document text using AI (Gemini-2.5-Flash)');
+
+    const prompt = `Analisis teks panduan/dokumen pelayanan publik berikut dan ekstrak informasinya ke dalam format JSON yang terstruktur.
+
+Kategori yang diperbolehkan hanya salah satu dari: 'darurat', 'layanan', 'hoaks', 'infrastruktur', 'sosial', 'lainnya'.
+Prosedur harus berupa langkah-langkah konkret berurutan (array of strings).
+Persyaratan harus berupa dokumen pendukung yang wajib dibawa (array of strings).
+
+JSON Output harus mengikuti skema ini persis:
+{
+  "name": "Nama layanan publik",
+  "institution": "Nama instansi/lembaga penyelenggara",
+  "category": "kategori",
+  "categoryReason": "Penjelasan mengapa dokumen diklasifikasikan ke kategori tersebut",
+  "description": "Deskripsi singkat layanan",
+  "requirements": ["Syarat 1", "Syarat 2"],
+  "procedures": ["Langkah 1", "Langkah 2"],
+  "contactPhone": "Nomor telepon kontak resmi (jika ada, jika tidak kosongkan)",
+  "contactEmail": "Alamat email kontak resmi (jika ada, jika tidak kosongkan)",
+  "address": "Alamat fisik instansi (jika ada, jika tidak kosongkan)",
+  "website": "URL website resmi (jika ada, jika tidak kosongkan)"
+}
+
+Teks Dokumen:
+${text}`;
+
+    const messages: ChatMessage[] = [
+      { role: 'system', content: 'Anda adalah asisten AI yang ahli dalam mengekstrak informasi terstruktur dari dokumen birokrasi pemerintahan Indonesia.' },
+      { role: 'user', content: prompt }
+    ];
+
+    // Menggunakan callAI dengan jsonMode: true agar output terjamin valid JSON
+    const aiResponse = await callAI(messages, undefined, 0.1, true);
+    
+    // Parse JSON output secara aman
+    const parsedData = JSON.parse(aiResponse);
+
+    return c.json({
+      success: true,
+      data: parsedData
+    });
+
+  } catch (error: any) {
+    logger.error('❌ Parse service document error:', error);
+    return c.json({
+      error: 'Gagal menganalisis dokumen',
+      message: error.message || 'Unknown error'
+    }, 500);
   }
 };
