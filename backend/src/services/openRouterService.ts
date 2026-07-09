@@ -491,3 +491,71 @@ KARAKTER & BAHASA:
 - Gunakan Bahasa Indonesia yang baik, benar, dan bersih tanpa emoji.
 - Jawab secara langsung tanpa perlu pembukaan/penutup moralitas yang bertele-tele.`;
 };
+
+// =========================================================================
+// URGENCY SCORING — AI menilai tingkat urgensi laporan warga
+// =========================================================================
+
+export type UrgencyLevel = 'Kritis' | 'Tinggi' | 'Sedang' | 'Rendah';
+
+export interface UrgencyResult {
+  level: UrgencyLevel;
+  reason: string;
+}
+
+/**
+ * Menilai tingkat urgensi laporan warga menggunakan AI (JSON Mode)
+ * @param description - Deskripsi laporan warga
+ * @param category - Kategori laporan
+ * @returns Promise<UrgencyResult> - Level urgensi dan alasannya
+ */
+export const scoreUrgency = async (
+  description: string,
+  category: string
+): Promise<UrgencyResult> => {
+  logger.info('🚨 Scoring urgency for report:', { category, descLen: description.length });
+
+  const messages: ChatMessage[] = [
+    {
+      role: 'system',
+      content: `Anda adalah sistem penilaian urgensi otomatis untuk laporan aduan warga Indonesia.
+Tugas Anda adalah menilai tingkat urgensi sebuah laporan berdasarkan deskripsi dan kategorinya.
+
+KRITERIA PENILAIAN:
+- "Kritis": Mengancam jiwa, keselamatan, atau keamanan publik secara langsung (kebakaran aktif, kekerasan fisik sedang berlangsung, bencana alam, darurat medis)
+- "Tinggi": Dampak serius pada warga banyak atau infrastruktur vital (jalan rusak parah, banjir, gangguan layanan publik esensial, kekerasan KDRT)
+- "Sedang": Masalah yang perlu perhatian namun tidak mendesak (fasilitas umum rusak ringan, keluhan layanan, sampah menumpuk)
+- "Rendah": Pengaduan ringan atau informasi saja (pertanyaan, saran, laporan tidak mendesak)
+
+ATURAN OUTPUT:
+- Jawab HANYA dalam format JSON valid tanpa markdown atau teks tambahan apapun.
+- Format: {"level": "Kritis|Tinggi|Sedang|Rendah", "reason": "Alasan singkat dalam 1-2 kalimat Bahasa Indonesia"}
+- Jangan menambahkan field lain selain "level" dan "reason".`
+    },
+    {
+      role: 'user',
+      content: `Kategori: ${category}\nDeskripsi laporan: ${description}`
+    }
+  ];
+
+  try {
+    const response = await callAI(messages, DEFAULT_MODEL, 0.1, true);
+    
+    // Parse JSON response
+    const cleaned = response.replace(/```json\n?|\n?```/g, '').trim();
+    const parsed = JSON.parse(cleaned) as UrgencyResult;
+    
+    // Validate level value
+    const validLevels: UrgencyLevel[] = ['Kritis', 'Tinggi', 'Sedang', 'Rendah'];
+    if (!validLevels.includes(parsed.level)) {
+      parsed.level = 'Sedang';
+    }
+    
+    logger.info('✅ Urgency scored:', parsed.level);
+    return parsed;
+  } catch (err) {
+    logger.error('⚠️ Urgency scoring failed, defaulting to Sedang:', err);
+    return { level: 'Sedang', reason: 'Tidak dapat dinilai secara otomatis.' };
+  }
+};
+

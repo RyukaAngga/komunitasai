@@ -2,7 +2,8 @@ import { Hono } from 'hono';
 import { 
   registerController, 
   loginController, 
-  meController 
+  meController,
+  updateProfileController
 } from '../controllers/authController';
 import { authMiddleware } from '../utils/authMiddleware';
 
@@ -25,5 +26,11 @@ auth.post('/login', loginController);
  * GET /api/auth/me
  */
 auth.get('/me', authMiddleware, meController);
+
+/**
+ * Endpoint Update Profil User
+ * PATCH /api/auth/profile
+ */
+auth.patch('/profile', authMiddleware, updateProfileController);
 
 export default auth;

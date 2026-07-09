@@ -12,7 +12,8 @@ import {
   createSystemPrompt, 
   validateClaim, 
   summarizeDocument,
-  extractTextFromImage
+  extractTextFromImage,
+  scoreUrgency
 } from '../services/openRouterService';
 import { 
   saveChatHistory, 
@@ -29,6 +30,7 @@ import { logger } from '../utils/logger';
 import { z } from 'zod';
 import { checkGuardrails, GUARDRAIL_REFUSAL } from '../utils/guardrails';
 import { extractTextFromFile } from '../services/fileExtractService';
+import { redactPII } from '../utils/piiRedactor';
 
 // --- Sanitize Helper ---
 
@@ -37,6 +39,62 @@ import { extractTextFromFile } from '../services/fileExtractService';
  */
 function stripHtml(input: string): string {
   return input.replace(/<[^>]*>/g, '').trim();
+}
+
+/**
+ * Helper to build RAG context string
+ */
+function buildRagContext(services: any[]): string {
+  return `\n\nREFERENSI DOKUMEN LAYANAN PUBLIK YANG RELEVAN DI DATABASE:\n` +
+    services.map((s: any) => 
+      `Layanan: ${s.name}\n` +
+      `Lembaga: ${s.institution}\n` +
+      `Kategori: ${s.category}\n` +
+      `Deskripsi: ${s.description}\n` +
+      `Syarat Dokumen: ${JSON.stringify(s.requirements)}\n` +
+      `Langkah Prosedur: ${JSON.stringify(s.procedures)}\n` +
+      `Kontak Resmi: ${s.contact_phone || '-'} | ${s.contact_email || '-'}\n` +
+      `Alamat: ${s.address || '-'}\n` +
+      `Link Resmi: ${s.website || '-'}\n` +
+      `---`
+    ).join('\n');
+}
+
+// --- Quota Tracking Helper ---
+async function incrementQuota(userId: string | null, sessionId: string) {
+  try {
+    const isUser = !!userId;
+    const now = new Date();
+    // Default reset is next day
+    const nextReset = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    if (isUser) {
+      const { data } = await supabase.from('user_usage').select('id, prompt_count, reset_at').eq('user_id', userId).maybeSingle();
+      if (!data) {
+        await supabase.from('user_usage').insert({ user_id: userId, prompt_count: 1, reset_at: nextReset.toISOString() });
+      } else {
+        if (now.getTime() > new Date(data.reset_at).getTime()) {
+          await supabase.from('user_usage').update({ prompt_count: 1, reset_at: nextReset.toISOString() }).eq('id', data.id);
+        } else {
+          await supabase.from('user_usage').update({ prompt_count: data.prompt_count + 1 }).eq('id', data.id);
+        }
+      }
+    } else {
+      if (!sessionId) return;
+      const { data } = await supabase.from('user_usage').select('id, prompt_count, reset_at').eq('session_id', sessionId).maybeSingle();
+      if (!data) {
+        await supabase.from('user_usage').insert({ session_id: sessionId, prompt_count: 1, reset_at: nextReset.toISOString() });
+      } else {
+        if (now.getTime() > new Date(data.reset_at).getTime()) {
+          await supabase.from('user_usage').update({ prompt_count: 1, reset_at: nextReset.toISOString() }).eq('id', data.id);
+        } else {
+          await supabase.from('user_usage').update({ prompt_count: data.prompt_count + 1 }).eq('id', data.id);
+        }
+      }
+    }
+  } catch (err) {
+    logger.error('Failed to increment quota:', err);
+  }
 }
 
 // --- Validation Schemas ---
@@ -126,35 +184,34 @@ export const chatController = async (c: Context) => {
 
     let history = await getChatHistory(sessionId) || [];
     
-    // --- RAG PIPELINE ---
+    // --- PII REDACTION (Responsible AI) ---
+    const safeMessage = validated.message ? redactPII(validated.message) : validated.message;
+
+    // --- HYBRID RAG PIPELINE (Vector + BM25 + RRF) ---
     let ragContext = '';
-    if (validated.message) {
+    if (safeMessage) {
       try {
-        const queryVector = await getEmbedding(validated.message);
-        const { data: matchedServices, error: rpcError } = await supabase.rpc('match_services', {
+        const queryVector = await getEmbedding(safeMessage);
+        const { data: matchedServices, error: rpcError } = await supabase.rpc('hybrid_search_services', {
+          query_text: safeMessage,
           query_embedding: queryVector,
-          match_threshold: 0.35,
-          match_count: 2
+          match_count: 5
         });
 
         if (rpcError) {
-          logger.error('❌ Supabase RAG RPC error:', rpcError);
+          logger.error('❌ Supabase Hybrid RAG RPC error:', rpcError);
+          // Fallback to vector-only
+          const { data: fallbackServices } = await supabase.rpc('match_services', {
+            query_embedding: queryVector,
+            match_threshold: 0.35,
+            match_count: 3
+          });
+          if (fallbackServices && fallbackServices.length > 0) {
+            ragContext = buildRagContext(fallbackServices);
+          }
         } else if (matchedServices && matchedServices.length > 0) {
-          logger.info(`🔍 RAG: Found ${matchedServices.length} matching services`);
-          
-          ragContext = `\n\nREFERENSI DOKUMEN LAYANAN PUBLIK YANG RELEVAN DI DATABASE:\n` +
-            matchedServices.map((s: any) => 
-              `Layanan: ${s.name}\n` +
-              `Lembaga: ${s.institution}\n` +
-              `Kategori: ${s.category}\n` +
-              `Deskripsi: ${s.description}\n` +
-              `Syarat Dokumen: ${JSON.stringify(s.requirements)}\n` +
-              `Langkah Prosedur: ${JSON.stringify(s.procedures)}\n` +
-              `Kontak Resmi: ${s.contact_phone || '-'} | ${s.contact_email || '-'}\n` +
-              `Alamat: ${s.address || '-'}\n` +
-              `Link Resmi: ${s.website || '-'}\n` +
-              `---`
-            ).join('\n');
+          logger.info(`🔍 Hybrid RAG+RRF: Found ${matchedServices.length} matching services`);
+          ragContext = buildRagContext(matchedServices);
         }
       } catch (e) {
         logger.error('⚠️ RAG pipeline failed, falling back to standard LLM chat:', e);
@@ -166,7 +223,7 @@ export const chatController = async (c: Context) => {
     // Construct user content for this turn (text or multimodal)
     const userContent = validated.image
       ? [
-          { type: 'text', text: validated.message || 'Minta tolong analisis gambar ini.' },
+          { type: 'text', text: safeMessage || 'Minta tolong analisis gambar ini.' },
           {
             type: 'image_url',
             image_url: {
@@ -174,7 +231,7 @@ export const chatController = async (c: Context) => {
             }
           }
         ]
-      : validated.message;
+      : safeMessage;
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPromptText },
@@ -194,6 +251,7 @@ export const chatController = async (c: Context) => {
     ];
     
     await saveChatHistory(sessionId, updatedHistory, userId);
+    await incrementQuota(userId, sessionId);
 
     return c.json({
       content: response,
@@ -277,35 +335,34 @@ export const chatStreamController = async (c: Context) => {
     return streamSSE(c, async (stream) => {
       let history = await getChatHistory(sessionId) || [];
       
-      // --- RAG PIPELINE ---
+      // --- PII REDACTION (Responsible AI) ---
+      const safeMessage = validated.message ? redactPII(validated.message) : validated.message;
+
+      // --- HYBRID RAG PIPELINE (Vector + BM25 + RRF) ---
       let ragContext = '';
-      if (validated.message) {
+      if (safeMessage) {
         try {
-          const queryVector = await getEmbedding(validated.message);
-          const { data: matchedServices, error: rpcError } = await supabase.rpc('match_services', {
+          const queryVector = await getEmbedding(safeMessage);
+          const { data: matchedServices, error: rpcError } = await supabase.rpc('hybrid_search_services', {
+            query_text: safeMessage,
             query_embedding: queryVector,
-            match_threshold: 0.35,
-            match_count: 2
+            match_count: 5
           });
 
           if (rpcError) {
-            logger.error('❌ Supabase RAG RPC error:', rpcError);
+            logger.error('❌ Supabase Hybrid RAG RPC error:', rpcError);
+            // Fallback to vector-only
+            const { data: fallbackServices } = await supabase.rpc('match_services', {
+              query_embedding: queryVector,
+              match_threshold: 0.35,
+              match_count: 3
+            });
+            if (fallbackServices && fallbackServices.length > 0) {
+              ragContext = buildRagContext(fallbackServices);
+            }
           } else if (matchedServices && matchedServices.length > 0) {
-            logger.info(`🔍 RAG: Found ${matchedServices.length} matching services`);
-            
-            ragContext = `\n\nREFERENSI DOKUMEN LAYANAN PUBLIK YANG RELEVAN DI DATABASE:\n` +
-              matchedServices.map((s: any) => 
-                `Layanan: ${s.name}\n` +
-                `Lembaga: ${s.institution}\n` +
-                `Kategori: ${s.category}\n` +
-                `Deskripsi: ${s.description}\n` +
-                `Syarat Dokumen: ${JSON.stringify(s.requirements)}\n` +
-                `Langkah Prosedur: ${JSON.stringify(s.procedures)}\n` +
-                `Kontak Resmi: ${s.contact_phone || '-'} | ${s.contact_email || '-'}\n` +
-                `Alamat: ${s.address || '-'}\n` +
-                `Link Resmi: ${s.website || '-'}\n` +
-                `---`
-              ).join('\n');
+            logger.info(`🔍 Hybrid RAG+RRF: Found ${matchedServices.length} matching services`);
+            ragContext = buildRagContext(matchedServices);
           }
         } catch (e) {
           logger.error('⚠️ RAG pipeline failed, falling back to standard LLM chat:', e);
@@ -357,7 +414,7 @@ export const chatStreamController = async (c: Context) => {
       // Construct user content for this turn (text or multimodal)
       const userContent = validated.image
         ? [
-            { type: 'text', text: validated.message || 'Minta tolong analisis gambar ini.' },
+            { type: 'text', text: safeMessage || 'Minta tolong analisis gambar ini.' },
             {
               type: 'image_url',
               image_url: {
@@ -365,7 +422,7 @@ export const chatStreamController = async (c: Context) => {
               }
             }
           ]
-        : validated.message;
+        : safeMessage;
 
       const messages: ChatMessage[] = [
         { role: 'system', content: systemPromptText },
@@ -408,6 +465,7 @@ export const chatStreamController = async (c: Context) => {
         ];
         
         await saveChatHistory(sessionId, updatedHistory, userId);
+        await incrementQuota(userId, sessionId);
 
         await stream.writeSSE({
           data: JSON.stringify({
@@ -523,7 +581,7 @@ export const validateClaimController = async (c: Context) => {
     // Simpan hasil verifikasi klaim ke Supabase
     try {
       const cleanClaim = validated.claim.trim();
-      const { data: existingClaims } = await supabase
+      const { data: existingClaims } = await supabaseAdmin
         .from('claim_verifications')
         .select('id, search_count')
         .ilike('claim_text', cleanClaim)
@@ -531,7 +589,7 @@ export const validateClaimController = async (c: Context) => {
 
       if (existingClaims && existingClaims.length > 0) {
         const existing = existingClaims[0];
-        await supabase
+        await supabaseAdmin
           .from('claim_verifications')
           .update({
             search_count: existing.search_count + 1,
@@ -540,7 +598,7 @@ export const validateClaimController = async (c: Context) => {
           .eq('id', existing.id);
         logger.info('📈 Incremented search count for claim:', existing.id);
       } else {
-        await supabase
+        await supabaseAdmin
           .from('claim_verifications')
           .insert({
             claim_text: cleanClaim,
@@ -603,7 +661,7 @@ export const summarizeController = async (c: Context) => {
 
     // Cek cache ringkasan dokumen di database
     try {
-      const { data: existingSummary } = await supabase
+      const { data: existingSummary } = await supabaseAdmin
         .from('document_summaries')
         .select('summary')
         .eq('original_hash', originalHash)
@@ -630,7 +688,7 @@ export const summarizeController = async (c: Context) => {
         .filter(line => /^\d+\.\s+/.test(line))
         .map(line => line.replace(/^\d+\.\s+/, ''));
 
-      await supabase
+      await supabaseAdmin
         .from('document_summaries')
         .insert({
           original_hash: originalHash,
@@ -812,17 +870,27 @@ export const getDashboardStatsController = async (c: Context) => {
     logger.info('📊 Admin: Get dashboard stats');
 
     const supabaseClient = c.get('supabase') || supabase;
-    const [reportsResult, chatHistoryResult] = await Promise.all([
-      supabaseClient.from('citizen_reports').select('status, district', { count: 'exact' }),
+    const [reportsResult, chatHistoryResult, claimsResult, summariesResult] = await Promise.all([
+      supabaseClient.from('citizen_reports').select('status, district, urgency_level', { count: 'exact' }),
       supabaseClient.from('chat_history').select('session_id', { count: 'exact' }),
+      supabaseClient.from('claim_verifications').select('id', { count: 'exact' }),
+      supabaseClient.from('document_summaries').select('id', { count: 'exact' }),
     ]);
 
     const reports = reportsResult.data || [];
     const totalReports = reportsResult.count || 0;
     const totalSessions = chatHistoryResult.count || 0;
+    const totalClaims = claimsResult.count || 0;
+    const totalSummaries = summariesResult.count || 0;
 
     const statusCounts = reports.reduce((acc: any, r: any) => {
       acc[r.status] = (acc[r.status] || 0) + 1;
+      return acc;
+    }, {});
+
+    const urgencyCounts = reports.reduce((acc: any, r: any) => {
+      const level = r.urgency_level || 'Sedang';
+      acc[level] = (acc[level] || 0) + 1;
       return acc;
     }, {});
 
@@ -836,11 +904,19 @@ export const getDashboardStatsController = async (c: Context) => {
     return c.json({
       totalReports,
       totalSessions,
+      totalClaims,
+      totalSummaries,
       statusCounts: {
         Menunggu: statusCounts['Menunggu'] || 0,
         Diproses: statusCounts['Diproses'] || 0,
         Selesai: statusCounts['Selesai'] || 0,
         Ditolak: statusCounts['Ditolak'] || 0,
+      },
+      urgencyCounts: {
+        Kritis: urgencyCounts['Kritis'] || 0,
+        Tinggi: urgencyCounts['Tinggi'] || 0,
+        Sedang: urgencyCounts['Sedang'] || 0,
+        Rendah: urgencyCounts['Rendah'] || 0,
       },
       districtCounts,
       timestamp: new Date().toISOString(),
@@ -864,6 +940,7 @@ export const createReportController = async (c: Context) => {
     const validated = reportSchema.parse(body);
     const user = c.get('user');
     const userId = user ? user.id : null;
+    const supabaseClient = c.get('supabase') || supabase;
 
     logger.info('📋 Citizen report request received:', {
       reporterName: validated.reporterName,
@@ -878,7 +955,6 @@ export const createReportController = async (c: Context) => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      const supabaseClient = c.get('supabase') || supabase;
       const { data: guestReports, error: countError } = await supabaseClient
         .from('citizen_reports')
         .select('id')
@@ -907,7 +983,6 @@ export const createReportController = async (c: Context) => {
     }
 
     // Simpan aduan warga ke database Supabase (tabel citizen_reports)
-    const supabaseClient = c.get('supabase') || supabase;
     const { data, error } = await supabaseClient
       .from('citizen_reports')
       .insert({
@@ -936,6 +1011,23 @@ export const createReportController = async (c: Context) => {
 
     // Emit real-time event to refresh admin dashboards
     adminEvents.emit('broadcast', { type: 'REPORT_CREATED', id: data.id });
+
+    // --- AI URGENCY SCORING (async, non-blocking) ---
+    // Run in background so it doesn't delay citizen's response
+    const reportId = data.id;
+    setImmediate(async () => {
+      try {
+        const urgency = await scoreUrgency(validated.description, validated.category);
+        await supabaseClient
+          .from('citizen_reports')
+          .update({ urgency_level: urgency.level, urgency_reason: urgency.reason })
+          .eq('id', reportId);
+        logger.info(`🚨 Urgency scored for report ${reportId}: ${urgency.level}`);
+        adminEvents.emit('broadcast', { type: 'REPORT_URGENCY_UPDATED', id: reportId });
+      } catch (urgencyErr) {
+        logger.error('⚠️ Urgency scoring failed for report:', reportId, urgencyErr);
+      }
+    });
 
     return c.json({
       id: data.id,
@@ -1087,10 +1179,16 @@ Persyaratan: ${validated.requirements.join(', ')}
 Prosedur: ${validated.procedures.join(' -> ')}`;
 
     // 2. Generate embedding secara aman di server menggunakan OpenRouter
-    const vector = await getEmbedding(embeddingText);
+    //    Jika gagal (API key belum diset, rate limit, dsb.), layanan tetap disimpan tanpa vektor
+    let vector: number[] | null = null;
+    try {
+      vector = await getEmbedding(embeddingText);
+    } catch (embeddingError: any) {
+      logger.warn('⚠️ Embedding generation failed — service akan disimpan tanpa vektor RAG:', embeddingError.message);
+    }
 
     // 3. Simpan data layanan beserta embeddingnya ke Supabase
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('public_services')
       .insert({
         name: validated.name,
@@ -1112,11 +1210,15 @@ Prosedur: ${validated.procedures.join(' -> ')}`;
       throw error;
     }
 
-    logger.info('✅ Public service created successfully with embedding vector. ID:', data.id);
+    const hasVector = vector !== null;
+    logger.info(`✅ Public service created successfully. ID: ${data.id} | Vector: ${hasVector ? 'YES' : 'NO (fallback mode)'}`);
 
     return c.json({
       id: data.id,
-      message: 'Layanan publik berhasil ditambahkan beserta data representasi vektor (RAG).',
+      message: hasVector
+        ? 'Layanan publik berhasil ditambahkan beserta data representasi vektor (RAG).'
+        : 'Layanan publik berhasil ditambahkan. Catatan: embedding vektor tidak tersedia saat ini (cek OPENROUTER_API_KEY).',
+      hasVector,
     }, 201);
 
   } catch (error: any) {
@@ -1196,7 +1298,7 @@ export const deleteServiceController = async (c: Context) => {
     const id = c.req.param('id');
     logger.info('🗑️ Admin: Delete public service request for ID:', id);
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('public_services')
       .delete()
       .eq('id', id);
@@ -1543,3 +1645,99 @@ ${text}`;
     }, 500);
   }
 };
+
+const ragDocumentSchema = z.object({
+  filename: z.string().min(1, 'Nama file wajib diisi'),
+  file_size: z.number().int().positive('Ukuran file tidak valid'),
+  file_type: z.string().min(1, 'Tipe file wajib diisi'),
+  file_path: z.string().optional(),
+});
+
+/**
+ * Get RAG Documents Controller
+ * GET /api/services/documents
+ */
+export const getRAGDocumentsController = async (c: Context) => {
+  try {
+    logger.info('📂 Admin: Get RAG documents list');
+    const supabaseClient = c.get('supabase') || supabase;
+    const { data, error } = await supabaseClient
+      .from('rag_documents')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return c.json({
+      success: true,
+      data: data || [],
+    });
+  } catch (error: any) {
+    logger.error('❌ Get RAG documents list error:', error);
+    return c.json({ error: 'Gagal mengambil daftar dokumen RAG', message: error.message }, 500);
+  }
+};
+
+/**
+ * Create RAG Document Controller
+ * POST /api/services/documents
+ */
+export const createRAGDocumentController = async (c: Context) => {
+  try {
+    const body = await c.req.json();
+    const validated = ragDocumentSchema.parse(body);
+
+    logger.info('📂 Admin: Saving RAG document metadata:', validated.filename);
+    const { data, error } = await supabaseAdmin
+      .from('rag_documents')
+      .insert({
+        filename: validated.filename,
+        file_size: validated.file_size,
+        file_type: validated.file_type,
+        file_path: validated.file_path || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return c.json({
+      success: true,
+      data,
+      message: 'Dokumen RAG berhasil disimpan.',
+    }, 201);
+  } catch (error: any) {
+    if (error instanceof z.ZodError) {
+      return c.json({ error: 'ValidationError', message: error.issues[0]?.message || 'Validasi gagal' }, 400);
+    }
+    logger.error('❌ Create RAG document error:', error);
+    return c.json({ error: 'Gagal menyimpan dokumen RAG', message: error.message }, 500);
+  }
+};
+
+/**
+ * Delete RAG Document Controller
+ * DELETE /api/services/documents/:id
+ */
+export const deleteRAGDocumentController = async (c: Context) => {
+  try {
+    const id = c.req.param('id');
+    logger.info('📂 Admin: Delete RAG document request for ID:', id);
+
+    const { error } = await supabaseAdmin
+      .from('rag_documents')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    return c.json({
+      success: true,
+      message: 'Dokumen RAG berhasil dihapus.',
+    });
+  } catch (error: any) {
+    logger.error('❌ Delete RAG document error:', error);
+    return c.json({ error: 'Gagal menghapus dokumen RAG', message: error.message }, 500);
+  }
+};
+

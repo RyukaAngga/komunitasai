@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion, AnimatePresence, useScroll, useTransform } from 'framer-motion'
 import {
   Bot, Shield, FileText, Users,
   ArrowRight, Loader2, Sparkles,
@@ -14,7 +14,14 @@ import { useChatStore } from '@/store/chatStore'
 import { useToast } from '@/components/ui/toast'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
+import { useAuthModalStore } from '@/store/authModalStore'
 import Footer4Col from '@/components/ui/footer-column'
+import { Navbar } from '@/components/Navbar'
+
+// MermaidDiagram lazy-loaded — Mermaid library is ~2MB, only load when needed
+const MermaidDiagram = lazy(() =>
+  import('@/components/MermaidDiagram').then(m => ({ default: m.MermaidDiagram }))
+)
 
 // ─── Shared animation presets ────────────────────────────────────────────────
 const fadeUp = {
@@ -108,18 +115,49 @@ const renderSummaryContent = (text: string) => {
   const lines = text.split('\n')
   const elements: React.ReactNode[] = []
   let inCodeBlock = false
+  let inMermaidBlock = false
+  let mermaidLines: string[] = []
 
   lines.forEach((line, idx) => {
     const trimmed = line.trim()
 
-    // Handle code blocks
-    if (trimmed.startsWith('```')) {
-      inCodeBlock = !inCodeBlock
+    // Handle mermaid block opening
+    if (trimmed.startsWith('```mermaid')) {
+      inMermaidBlock = true
+      inCodeBlock = true
+      mermaidLines = []
+      return
+    }
+
+    // Handle code block opening (non-mermaid)
+    if (trimmed.startsWith('```') && !inCodeBlock) {
+      inCodeBlock = true
+      inMermaidBlock = false
+      return
+    }
+
+    // Handle code block closing
+    if (trimmed === '```' && inCodeBlock) {
+      if (inMermaidBlock && mermaidLines.length > 0) {
+        elements.push(
+          <Suspense key={`mermaid-${idx}`} fallback={<div className="my-4 h-16 rounded-xl bg-zinc-900/80 border border-purple-900/30 animate-pulse" />}>
+            <MermaidDiagram chart={mermaidLines.join('\n')} />
+          </Suspense>
+        )
+      }
+      inCodeBlock = false
+      inMermaidBlock = false
+      mermaidLines = []
+      return
+    }
+
+    if (inMermaidBlock) {
+      mermaidLines.push(line)
       return
     }
 
     if (inCodeBlock) {
-      // We skip all code blocks in the summary render, especially mermaid
+      // Skip non-mermaid code block lines
       return
     }
 
@@ -137,8 +175,8 @@ const renderSummaryContent = (text: string) => {
     if (trimmed.startsWith('#')) {
       const headerLevel = (trimmed.match(/^#+/) || ['#'])[0].length
       const cleanHeader = trimmed.replace(/^#+\s*/, '')
-      const headerClass = headerLevel === 1 
-        ? "text-[14px] font-semibold text-zinc-100 mt-4 mb-2 tracking-tight" 
+      const headerClass = headerLevel === 1
+        ? "text-[14px] font-semibold text-zinc-100 mt-4 mb-2 tracking-tight"
         : headerLevel === 2
         ? "text-[13px] font-semibold text-zinc-100 mt-3.5 mb-1.5 tracking-tight"
         : "text-[12px] font-semibold text-zinc-200 mt-3 mb-1.5"
@@ -157,8 +195,8 @@ const renderSummaryContent = (text: string) => {
       const indentLevel = Math.floor(indentSpaces / 2)
       const content = bulletMatch[3]
       elements.push(
-        <div 
-          key={`li-${idx}`} 
+        <div
+          key={`li-${idx}`}
           className="text-[12px] text-zinc-300 leading-relaxed mb-2 flex items-start gap-2"
           style={{ paddingLeft: `${indentLevel * 1}rem` }}
         >
@@ -169,29 +207,28 @@ const renderSummaryContent = (text: string) => {
       return
     }
 
-    // Ordered lists
-    const numberMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/)
-    if (numberMatch) {
-      const indentSpaces = numberMatch[1].length
+    // Numbered lists
+    const numberedMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/)
+    if (numberedMatch) {
+      const indentSpaces = numberedMatch[1].length
       const indentLevel = Math.floor(indentSpaces / 2)
-      const num = numberMatch[2]
-      const content = numberMatch[3]
+      const num = numberedMatch[2]
+      const content = numberedMatch[3]
       elements.push(
-        <div 
-          key={`ol-${idx}`} 
+        <div
+          key={`nl-${idx}`}
           className="text-[12px] text-zinc-300 leading-relaxed mb-2 flex items-start gap-2"
           style={{ paddingLeft: `${indentLevel * 1}rem` }}
         >
-          <span className="text-zinc-500 shrink-0 select-none font-mono text-[10px] mt-0.5 min-w-[12px] text-right">{num}.</span>
+          <span className="text-purple-400 shrink-0 select-none font-mono text-[11px] mt-0.5">{num}.</span>
           <span className="flex-1">{parseMarkdownText(content)}</span>
         </div>
       )
       return
     }
 
-    // Standard paragraph
     elements.push(
-      <p key={`p-${idx}`} className="text-[12px] text-zinc-300 leading-relaxed mb-2 font-normal font-sans">
+      <p key={`p-${idx}`} className="text-[12px] text-zinc-300 leading-relaxed mb-2">
         {parseMarkdownText(trimmed)}
       </p>
     )
@@ -207,7 +244,6 @@ export function HomePage() {
   const [claimResult, setClaimResult]   = useState<any>(null)
   const [docLoading, setDocLoading]     = useState(false)
   const [docResult, setDocResult]       = useState<any>(null)
-  const [isScrolled, setIsScrolled] = useState(false)
 
   // For Claim Verifier Image
   const [claimImage, setClaimImage] = useState<{ base64: string; mimeType: string; name: string } | null>(null)
@@ -224,30 +260,69 @@ export function HomePage() {
   const navigate = useNavigate()
   const { toast } = useToast()
 
-  const { isAuthenticated, user, logout, checkMe } = useAuthStore()
+  const { isAuthenticated, user, checkMe } = useAuthStore()
+  const { openModal } = useAuthModalStore()
 
   useEffect(() => {
     if (isAuthenticated && !user) {
-      checkMe().catch(err => console.error('Sesi gagal dimuat:', err))
+      checkMe().catch(() => {})
     }
   }, [isAuthenticated, user, checkMe])
 
+
+  const heroVideoRef = useRef<HTMLVideoElement>(null)
+  
   useEffect(() => {
-    const handleScroll = () => {
-      setIsScrolled(window.scrollY > 20)
+    const video = heroVideoRef.current
+    if (!video) return
+
+    let intervalId: any
+    let direction: 'forward' | 'backward' = 'forward'
+
+    const handleEnded = () => {
+      direction = 'backward'
+      video.pause()
+      
+      intervalId = setInterval(() => {
+        if (video.currentTime <= 0.1) {
+          clearInterval(intervalId)
+          video.currentTime = 0
+          direction = 'forward'
+          video.play().catch(() => {})
+        } else {
+          // step backward by 0.05 seconds (20 fps equivalent)
+          video.currentTime = Math.max(0, video.currentTime - 0.05)
+        }
+      }, 50)
     }
-    window.addEventListener('scroll', handleScroll)
-    return () => window.removeEventListener('scroll', handleScroll)
+
+    const handlePlay = () => {
+      if (direction === 'forward') {
+        clearInterval(intervalId)
+      }
+    }
+
+    video.addEventListener('ended', handleEnded)
+    video.addEventListener('play', handlePlay)
+
+    // auto start
+    video.play().catch(() => {})
+
+    return () => {
+      clearInterval(intervalId)
+      video.removeEventListener('ended', handleEnded)
+      video.removeEventListener('play', handlePlay)
+    }
   }, [])
 
-  const handleStartChat = () => {
+  const handleStartChat = useCallback(() => {
     const id = createSession(undefined, user?.id)
     setCurrentSession(id)
     navigate('/chat')
-  }
+  }, [createSession, user?.id, setCurrentSession, navigate])
 
   // --- Claim Image Handlers ---
-  const handleClaimImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleClaimImageChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
@@ -273,9 +348,9 @@ export function HomePage() {
     }
     reader.readAsDataURL(file)
     if (fileInputClaimRef.current) fileInputClaimRef.current.value = ''
-  }
+  }, [toast])
 
-  const handlePasteClaim = (e: React.ClipboardEvent) => {
+  const handlePasteClaim = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
     if (!items) return
 
@@ -301,9 +376,9 @@ export function HomePage() {
         }
       }
     }
-  }
+  }, [])
 
-  const handleVerifyClaim = async (e: React.FormEvent) => {
+  const handleVerifyClaim = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!claim.trim() && !claimImage) return
     setClaimLoading(true)
@@ -327,10 +402,10 @@ export function HomePage() {
     } finally {
       setClaimLoading(false)
     }
-  }
+  }, [claim, claimImage, toast])
 
   // --- Document File Handlers ---
-  const processDocumentFile = async (file: File) => {
+  const processDocumentFile = useCallback(async (file: File) => {
     const supportedExtensions = ['pdf', 'docx', 'xlsx', 'xls', 'txt', 'md', 'markdown']
     const extension = file.name.split('.').pop()?.toLowerCase() || ''
     
@@ -367,35 +442,35 @@ export function HomePage() {
     } finally {
       setDocExtractLoading(false)
     }
-  }
+  }, [toast])
 
-  const handleDocFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       processDocumentFile(file)
     }
     if (fileInputDocRef.current) fileInputDocRef.current.value = ''
-  }
+  }, [processDocumentFile])
 
-  const handleDragOver = (e: React.DragEvent) => {
+  const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDraggingDoc(true)
-  }
+  }, [])
 
-  const handleDragLeave = () => {
+  const handleDragLeave = useCallback(() => {
     setIsDraggingDoc(false)
-  }
+  }, [])
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault()
     setIsDraggingDoc(false)
     const file = e.dataTransfer.files?.[0]
     if (file) {
       processDocumentFile(file)
     }
-  }
+  }, [processDocumentFile])
 
-  const handlePasteDoc = (e: React.ClipboardEvent) => {
+  const handlePasteDoc = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items
     if (!items) return
 
@@ -410,9 +485,9 @@ export function HomePage() {
         }
       }
     }
-  }
+  }, [processDocumentFile])
 
-  const handleSummarize = async (e: React.FormEvent) => {
+  const handleSummarize = useCallback(async (e: React.FormEvent) => {
     e.preventDefault()
     if (!docText.trim()) return
     setDocLoading(true)
@@ -426,7 +501,7 @@ export function HomePage() {
     } finally {
       setDocLoading(false)
     }
-  }
+  }, [docText, toast])
 
   // Verdict badge config
   const getVerdict = (result: any) => {
@@ -438,6 +513,18 @@ export function HomePage() {
 
   const verdict = getVerdict(claimResult)
 
+  // Parallax scroll setup for Hero text elements
+  const heroRef = useRef<HTMLDivElement>(null)
+  const { scrollYProgress: heroProgress } = useScroll({
+    target: heroRef,
+    offset: ["start start", "end end"]
+  })
+
+  // Text vertical offsets based on scroll progress
+  const titleY = useTransform(heroProgress, [0, 1], [0, -110])
+  const subtitleY = useTransform(heroProgress, [0, 1], [0, -70])
+  const ctaY = useTransform(heroProgress, [0, 1], [0, -40])
+
   return (
     <div className="min-h-screen bg-dot-pattern text-zinc-100 flex flex-col relative overflow-x-hidden">
       {/* ── Ambient radial glow — does not distract ── */}
@@ -447,141 +534,25 @@ export function HomePage() {
       </div>
 
       {/* ══ HEADER ═══════════════════════════════════════════════════════════ */}
-      <motion.header
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-        className={cn(
-          "fixed top-0 left-0 right-0 z-50 h-[60px] px-6 md:px-10 flex items-center justify-between transition-all duration-300",
-          isScrolled 
-            ? "border-b border-zinc-800 bg-zinc-950/85 backdrop-blur-md shadow-[0_4px_20px_rgba(0,0,0,0.4)]" 
-            : "border-b border-transparent bg-transparent"
-        )}
-      >
-        {/* Logo */}
-        <div className="flex items-center gap-2.5 select-none">
-          <img src="/assets/logo/komunitas.png" alt="KOMUNITAS Logo" className="h-7 w-7 object-contain rounded-md" />
-          <span className={cn(
-            "font-semibold text-[15px] tracking-[-0.02em] transition-colors duration-300",
-            isScrolled ? "text-zinc-100" : "text-zinc-950"
-          )}>KOMUNITAS</span>
-        </div>
-
-        {/* Nav - Center absolutely to prevent shifting */}
-        <nav className="absolute left-1/2 -translate-x-1/2 hidden md:flex items-center gap-7">
-          {['Layanan', 'Verifikasi', 'Semua Aduan', 'Tentang'].map((item) => (
-            <button
-              key={item}
-              className={cn(
-                "text-[13px] transition-colors duration-300 tracking-[-0.01em] cursor-pointer",
-                isScrolled 
-                  ? "text-zinc-400 hover:text-zinc-100" 
-                  : "text-zinc-800 hover:text-zinc-950 font-semibold"
-              )}
-              onClick={() => {
-                if (item === 'Verifikasi') {
-                  document.getElementById('tools-section')?.scrollIntoView({ behavior: 'smooth' })
-                } else if (item === 'Tentang') {
-                  navigate('/about')
-                } else if (item === 'Layanan') {
-                  document.getElementById('features-section')?.scrollIntoView({ behavior: 'smooth' })
-                } else if (item === 'Semua Aduan') {
-                  navigate('/all-reports')
-                }
-              }}
-            >
-              {item}
-            </button>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-3">
-          {isAuthenticated && user ? (
-            <div className="flex items-center gap-3">
-              {/* User profile info */}
-              <div className="hidden md:flex flex-col items-end text-right select-none">
-                <span className={cn(
-                  "text-[12px] font-bold tracking-tight",
-                  isScrolled ? "text-zinc-100" : "text-zinc-950"
-                )}>{user.nama_panggilan || user.nama_lengkap}</span>
-                <span className="text-[9px] uppercase font-mono text-zinc-500 font-semibold tracking-wider leading-none mt-0.5">[{user.role}]</span>
-              </div>
-              
-              {/* Logout Button */}
-              <button
-                onClick={() => {
-                  logout()
-                  toast({ title: 'Sesi Berakhir', description: 'Anda telah berhasil keluar dari sistem.', type: 'info' })
-                }}
-                className={cn(
-                  "h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border transition-all duration-300 active:scale-[0.97] cursor-pointer",
-                  isScrolled
-                    ? "bg-zinc-900 hover:bg-zinc-850 text-zinc-200 border-zinc-800"
-                    : "bg-transparent hover:bg-zinc-900 text-zinc-900 hover:text-white border-zinc-900/30 hover:border-zinc-900"
-                )}
-              >
-                Keluar
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => navigate('/login')}
-                className={cn(
-                  "h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border transition-all duration-300 active:scale-[0.97] cursor-pointer",
-                  isScrolled
-                    ? "bg-zinc-900 hover:bg-zinc-850 text-zinc-200 border-zinc-800"
-                    : "bg-transparent hover:bg-zinc-900 text-zinc-900 hover:text-white border-zinc-900/30 hover:border-zinc-900"
-                )}
-              >
-                Masuk
-              </button>
-              <button
-                onClick={() => navigate('/register')}
-                className={cn(
-                  "h-8 px-3 text-[11px] font-bold rounded-lg tracking-wide border transition-all duration-300 active:scale-[0.97] cursor-pointer",
-                  isScrolled
-                    ? "bg-white hover:bg-zinc-100 text-zinc-950 border-white"
-                    : "bg-transparent hover:bg-zinc-900 text-zinc-900 hover:text-white border-zinc-900/30 hover:border-zinc-900"
-                )}
-              >
-                Daftar
-              </button>
-            </div>
-          )}
-          
-          <Button
-            onClick={handleStartChat}
-            className={cn(
-              "h-8 px-4 text-[12px] font-medium rounded-md tracking-[-0.01em] transition-all duration-300 active:scale-[0.97] shadow-none cursor-pointer",
-              isScrolled
-                ? "bg-white hover:bg-zinc-100 text-zinc-950 border border-transparent"
-                : "bg-transparent hover:bg-zinc-900 text-zinc-900 hover:text-white border border-zinc-900/30 hover:border-zinc-900"
-            )}
-          >
-            Mulai Percakapan
-          </Button>
-        </div>
-      </motion.header>
+      <Navbar activeItem="Beranda" onCtaClick={handleStartChat} />
 
       {/* ══ MAIN ═════════════════════════════════════════════════════════════ */}
       <main className="relative z-10 flex-1">
 
-        {/* ── HERO — Fullscreen video background, bottom-left content ─── */}
-        <section className="relative min-h-[92vh] overflow-hidden bg-[#080808]">
+        {/* ── HERO — Fullscreen ping-pong video background, centered content ─── */}
+        <section className="relative min-h-screen overflow-hidden bg-[#040404]">
 
-          {/* Background Video */}
+          {/* Background Video (Ping-Pong controlled via refs) */}
           <video
-            autoPlay
-            muted
-            loop
+            ref={heroVideoRef}
             playsInline
-            className="absolute inset-0 w-full h-full object-cover"
+            muted
+            className="absolute inset-0 w-full h-full object-cover scale-105 opacity-80"
             src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260508_215831_c6a8989c-d716-4d8d-8745-e972a2eec711.mp4"
           />
 
           {/* Subtle gradient overlay for text readability & smooth transition into dark background */}
-          <div className="absolute inset-0 bg-gradient-to-t from-[#080808] via-black/35 to-transparent pointer-events-none" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#040404] via-black/35 to-transparent pointer-events-none" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/55 via-transparent to-transparent pointer-events-none" />
 
           {/* Hero content — bottom-left aligned */}
@@ -643,7 +614,7 @@ export function HomePage() {
             initial="hidden"
             whileInView="show"
             viewport={{ once: true, margin: '-80px' }}
-            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-px bg-zinc-800/80 rounded-xl overflow-hidden border border-zinc-800"
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6"
           >
             {features.map((f, i) => {
               const Icon = f.icon
@@ -652,14 +623,14 @@ export function HomePage() {
                   key={i}
                   variants={fadeUp}
                   transition={{ duration: 0.45 }}
-                  className="group bg-zinc-900 hover:bg-zinc-800 transition-colors duration-300 p-7 flex flex-col gap-5"
+                  className="group relative rounded-2xl border border-zinc-800/80 bg-zinc-900/30 hover:bg-zinc-900/55 hover:border-zinc-700/60 p-6 flex flex-col gap-5 transition-all duration-300 shadow-sm"
                 >
-                  <div className="w-9 h-9 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center group-hover:border-zinc-600 transition-colors">
-                    <Icon className="w-4 h-4 text-zinc-400" />
+                  <div className="w-9 h-9 rounded-xl bg-zinc-900 border border-zinc-800 flex items-center justify-center group-hover:border-indigo-500/30 group-hover:bg-indigo-950/15 transition-all duration-300">
+                    <Icon className="w-4 h-4 text-zinc-400 group-hover:text-indigo-400 transition-colors duration-300" />
                   </div>
-                  <div className="space-y-1.5">
-                    <h3 className="text-[13px] font-semibold text-zinc-100 tracking-[-0.02em]">{f.title}</h3>
-                    <p className="text-[12px] text-zinc-500 leading-relaxed font-light">{f.description}</p>
+                  <div className="space-y-2">
+                    <h3 className="text-[14px] font-medium text-zinc-150 tracking-[-0.01em]">{f.title}</h3>
+                    <p className="text-[12.5px] text-zinc-450 leading-relaxed font-light">{f.description}</p>
                   </div>
                 </motion.div>
               )
@@ -670,18 +641,25 @@ export function HomePage() {
         {/* ── INTERACTIVE TOOLS ───────────────────────────────────────────── */}
         <section
           id="tools-section"
-          className="max-w-5xl mx-auto px-6 md:px-10 pb-32"
+          className="max-w-5xl mx-auto px-6 md:px-10 pb-32 relative"
         >
+          {/* Subtle background ambient glow for highlight */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[350px] bg-indigo-500/[0.015] rounded-full blur-[140px] pointer-events-none" />
+
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true, margin: '-60px' }}
             transition={{ duration: 0.5 }}
-            className="mb-10 space-y-2"
+            className="mb-12 flex flex-col items-center text-center space-y-2 relative z-10"
           >
-            <h2 className="text-[22px] md:text-[28px] font-semibold text-zinc-100 tracking-[-0.03em]">Alat Mandiri</h2>
-            <p className="text-[13px] text-zinc-500 font-light max-w-md leading-relaxed">
-              Gunakan langsung tanpa perlu membuka percakapan — cukup tempel teks dan dapatkan hasilnya.
+            <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] font-mono font-medium bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 uppercase tracking-widest mb-1.5">
+              Akses Mandiri
+            </span>
+            <h2 className="text-[26px] md:text-[32px] font-semibold text-zinc-100 tracking-[-0.03em]">Alat Mandiri</h2>
+            <div className="h-0.5 w-10 bg-indigo-500/40 rounded-full my-1" />
+            <p className="text-[13.5px] text-zinc-400 font-normal max-w-md leading-relaxed pt-1">
+              Gunakan langsung tanpa perlu membuka percakapan — cukup tempel teks dan dapatkan hasilnya secara instan.
             </p>
           </motion.div>
 
@@ -778,28 +756,108 @@ export function HomePage() {
                 </Button>
               </form>
 
-              {/* Result */}
+              {/* Result — Confidence Score Visual */}
               <AnimatePresence>
-                {claimResult && verdict && (
+                {claimResult && (
                   <motion.div
-                    initial={{ opacity: 0, y: 8 }}
+                    initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: 4 }}
-                    transition={{ duration: 0.3 }}
-                    className="rounded-lg border border-zinc-800 bg-zinc-800/50 p-4 space-y-3"
+                    transition={{ duration: 0.35 }}
+                    className="mt-1 rounded-2xl border bg-zinc-900/90 overflow-hidden"
+                    style={{
+                      borderColor: claimResult.isValid ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'
+                    }}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Hasil Analisis</span>
-                      <span className={cn('flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1 rounded-md border', verdict.bg, verdict.color)}>
-                        <verdict.Icon className="w-3 h-3" />
-                        {verdict.label}
-                      </span>
+                    {/* Header Badge */}
+                    <div
+                      className="flex items-center gap-3 px-5 py-4"
+                      style={{
+                        background: claimResult.isValid
+                          ? 'linear-gradient(135deg, rgba(16,185,129,0.12) 0%, transparent 60%)'
+                          : 'linear-gradient(135deg, rgba(239,68,68,0.12) 0%, transparent 60%)'
+                      }}
+                    >
+                      <div
+                        className="flex items-center justify-center w-12 h-12 rounded-full text-2xl font-bold border-2 shrink-0"
+                        style={{
+                          borderColor: claimResult.isValid ? '#10b981' : '#ef4444',
+                          color: claimResult.isValid ? '#10b981' : '#ef4444',
+                          background: claimResult.isValid ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'
+                        }}
+                      >
+                        {claimResult.isValid ? '✓' : '✗'}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div
+                          className="text-[15px] font-bold tracking-wide"
+                          style={{ color: claimResult.isValid ? '#10b981' : '#ef4444' }}
+                        >
+                          {claimResult.isValid ? 'INFORMASI VALID' : 'TERINDIKASI HOAKS'}
+                        </div>
+                        <div className="text-[11px] text-zinc-500 mt-0.5">Hasil Verifikasi Fact-Checker AI</div>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <div
+                          className="text-3xl font-black"
+                          style={{ color: claimResult.isValid ? '#10b981' : '#ef4444' }}
+                        >
+                          {claimResult.confidence ?? (claimResult.isValid ? 90 : 20)}%
+                        </div>
+                        <div className="text-[10px] text-zinc-500 uppercase tracking-widest">Confidence</div>
+                      </div>
                     </div>
-                    <p className="text-[12px] text-zinc-300 leading-relaxed">{claimResult.explanation}</p>
-                    <div className="flex justify-between text-[10px] text-zinc-600 pt-1 border-t border-zinc-800">
-                      <span>{claimResult.source || 'Kominfo / TurnBackHoax'}</span>
-                      <span>Keyakinan: {claimResult.confidence || 90}%</span>
+
+                    {/* Confidence Bar */}
+                    <div className="px-5 pb-3">
+                      <div className="h-2 rounded-full bg-zinc-800 overflow-hidden">
+                        <motion.div
+                          initial={{ width: 0 }}
+                          animate={{ width: `${claimResult.confidence ?? (claimResult.isValid ? 90 : 20)}%` }}
+                          transition={{ duration: 1, ease: 'easeOut' }}
+                          className="h-full rounded-full"
+                          style={{
+                            background: claimResult.isValid
+                              ? 'linear-gradient(90deg, #059669, #10b981)'
+                              : 'linear-gradient(90deg, #dc2626, #ef4444)'
+                          }}
+                        />
+                      </div>
                     </div>
+
+                    {/* Reasoning */}
+                    <div className="px-5 pb-4">
+                      <p className="text-[12px] text-zinc-300 leading-relaxed">
+                        {claimResult.explanation || claimResult.reasoning}
+                      </p>
+                    </div>
+
+                    {/* Sources */}
+                    {claimResult.sources && claimResult.sources.length > 0 && (
+                      <div className="border-t border-zinc-800 px-5 py-3">
+                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 font-semibold">Sumber Referensi</p>
+                        <div className="flex flex-col gap-1.5">
+                          {claimResult.sources.slice(0, 5).map((src: any, i: number) => (
+                            <a
+                              key={i}
+                              href={typeof src === 'string' ? src : src.url || src.link || '#'}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[11px] text-sky-400 hover:text-sky-300 truncate underline underline-offset-2 transition"
+                            >
+                              {typeof src === 'string' ? src : (src.title || src.url || src.link || `Sumber ${i + 1}`)}
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Fallback source footer */}
+                    {(!claimResult.sources || claimResult.sources.length === 0) && (
+                      <div className="border-t border-zinc-800/60 px-5 py-2.5 flex justify-between text-[10px] text-zinc-600">
+                        <span>{claimResult.source || 'Kominfo / TurnBackHoax'}</span>
+                      </div>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>

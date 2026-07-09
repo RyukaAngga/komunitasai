@@ -12,8 +12,9 @@ import {
   CitizenReportResponse
 } from '@/types'
 
-const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || `http://${host}:3000`
+import { API_BASE_URL } from '@/lib/apiConfig'
+import { useAuthStore } from '@/store/authStore'
+
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -39,6 +40,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiError>) => {
+    if (error.response?.status === 401) {
+      // Automatically log out user if token is invalid or expired
+      useAuthStore.getState().logout()
+    }
     const message = error.response?.data?.error || error.message || 'Terjadi kesalahan pada server'
     return Promise.reject(new Error(message))
   }
@@ -246,11 +251,19 @@ export interface ReportsResponse {
 export interface DashboardStats {
   totalReports: number
   totalSessions: number
+  totalClaims: number
+  totalSummaries: number
   statusCounts: {
     Menunggu: number
     Diproses: number
     Selesai: number
     Ditolak: number
+  }
+  urgencyCounts?: {
+    Kritis: number
+    Tinggi: number
+    Sedang: number
+    Rendah: number
   }
   timestamp: string
 }
@@ -289,6 +302,15 @@ export interface DocumentSummary {
   original_text: string
   summary: string
   key_points: string[]
+  created_at: string
+}
+
+export interface RAGDocument {
+  id: string
+  filename: string
+  file_size: number
+  file_type: string
+  file_path?: string
   created_at: string
 }
 
@@ -369,6 +391,30 @@ export const adminService = {
    */
   deleteService: async (id: string): Promise<{ success: boolean; message: string }> => {
     const response = await api.delete<{ success: boolean; message: string }>(`/api/services/${id}`)
+    return response.data
+  },
+
+  /**
+   * Ambil semua dokumen RAG
+   */
+  getRAGDocuments: async (): Promise<{ success: boolean; data: RAGDocument[] }> => {
+    const response = await api.get<{ success: boolean; data: RAGDocument[] }>('/api/services/documents')
+    return response.data
+  },
+
+  /**
+   * Tambah data metadata dokumen RAG baru
+   */
+  createRAGDocument: async (docData: { filename: string; file_size: number; file_type: string; file_path?: string }): Promise<{ success: boolean; data: RAGDocument }> => {
+    const response = await api.post<{ success: boolean; data: RAGDocument }>('/api/services/documents', docData)
+    return response.data
+  },
+
+  /**
+   * Hapus dokumen RAG
+   */
+  deleteRAGDocument: async (id: string): Promise<{ success: boolean; message: string }> => {
+    const response = await api.delete<{ success: boolean; message: string }>(`/api/services/documents/${id}`)
     return response.data
   },
 

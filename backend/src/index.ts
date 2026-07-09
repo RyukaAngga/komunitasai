@@ -28,6 +28,9 @@ import {
   deleteHistoryController,
   getActiveChatsController,
   parseServiceDocumentController,
+  getRAGDocumentsController,
+  createRAGDocumentController,
+  deleteRAGDocumentController,
 } from './controllers/chatController';
 import { authMiddleware, requireRoles, optionalAuthMiddleware } from './utils/authMiddleware';
 import { createStaffUserController, getStaffUsersController } from './controllers/authController';
@@ -161,7 +164,24 @@ app.use('*', logger());
  * Mengizinkan akses dari frontend
  */
 app.use('*', cors({
-  origin: (origin) => origin,
+  origin: (origin) => {
+    if (!origin) return '*';
+    try {
+      const hostname = new URL(origin).hostname;
+      if (
+        hostname === 'localhost' ||
+        hostname === '127.0.0.1' ||
+        hostname === 'komunitasai.web.id' ||
+        hostname.endsWith('.komunitasai.web.id') ||
+        hostname.endsWith('.run.app')
+      ) {
+        return origin;
+      }
+    } catch {
+      // Invalid URL format
+    }
+    return 'https://komunitasai.web.id';
+  },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposeHeaders: ['Content-Length', 'X-Requested-With'],
@@ -232,6 +252,9 @@ app.get('/api/admin/stats', getDashboardStatsController);
 app.post('/api/services', createServiceController);
 app.get('/api/services', getServicesController);
 app.delete('/api/services/:id', deleteServiceController);
+app.get('/api/services/documents', getRAGDocumentsController);
+app.post('/api/services/documents', createRAGDocumentController);
+app.delete('/api/services/documents/:id', deleteRAGDocumentController);
 app.post(
   '/api/services/parse-doc',
   authMiddleware,
