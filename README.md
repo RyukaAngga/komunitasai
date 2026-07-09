@@ -12,6 +12,18 @@
   <a href="https://komunitasai.web.id" target="_blank"><strong>Kunjungi Aplikasi Live (komunitasai.web.id)</strong></a>
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white" alt="TypeScript"/>
+  <img src="https://img.shields.io/badge/React_18-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React 18"/>
+  <img src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite"/>
+  <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS"/>
+  <br/>
+  <img src="https://img.shields.io/badge/Bun_Runtime-000000?style=for-the-badge&logo=bun&logoColor=white" alt="Bun Runtime"/>
+  <img src="https://img.shields.io/badge/Hono_Framework-E36049?style=for-the-badge&logo=hono&logoColor=white" alt="Hono Framework"/>
+  <img src="https://img.shields.io/badge/Supabase-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase"/>
+  <img src="https://img.shields.io/badge/PostgreSQL-316192?style=for-the-badge&logo=postgresql&logoColor=white" alt="PostgreSQL"/>
+</p>
+
 ---
 
 ## Deskripsi Umum Proyek
