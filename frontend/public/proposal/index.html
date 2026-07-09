@@ -136,7 +136,6 @@
 <body>
 
 <div class="word-document">
-
   <!-- ==========================================
        HALAMAN JUDUL / COVER SIMPEL
        ========================================== -->
@@ -150,53 +149,70 @@
   </div>
 
   <!-- ==========================================
-       BAB 1.1 LATAR BELAKANG
+       BAB 1.1 LATAR BELAKANG DAN ANALISIS PERMASALAHAN
        ========================================== -->
-  <h1 class="section-title">1.1 Latar Belakang dan Analisis Masalah</h1>
+  <h1 class="section-title">1.1 Latar Belakang dan Analisis Permasalahan</h1>
 
   <p>
-    <strong>1.923 konten hoaks. 800.000 berita palsu. 6.000 situs diblokir.</strong> Data resmi Kementerian Komunikasi dan Informatika (Kominfo) ini menyoroti krisis informasi digital di Indonesia yang secara langsung mengancam stabilitas ekonomi dan iklim investasi. Kondisi ini dipicu oleh kesenjangan kecakapan digital yang lebar: meskipun penetrasi internet nasional tinggi di angka <strong>54,68% (143,26 juta jiwa)</strong>, Indeks Masyarakat Digital Indonesia (IMDI) baru mencapai <strong>44,53%</strong> pada tahun 2025. Akibatnya, masyarakat memiliki akses informasi yang luas tetapi tidak dibekali kemampuan menyaring informasi secara kritis.
+    Krisis disinformasi digital di Indonesia telah mencapai skala yang mengancam stabilitas sosial dan efektivitas pelayanan publik. Data Kementerian Komunikasi dan Informatika mencatat ribuan konten hoaks menyebar setiap tahunnya, yang secara langsung mengeksploitasi kesenjangan kecakapan digital masyarakat. Meskipun tingkat penetrasi internet nasional tinggi, Indeks Masyarakat Digital Indonesia (IMDI) menunjukkan angka yang kontras, mencerminkan ketidakmampuan sebagian besar pengguna dalam menyaring informasi secara kritis.
   </p>
 
   <p>
-    Permasalahan ini mengakar pada tiga kendala struktural: (1) rendahnya literasi digital mandiri; (2) minimnya instrumen cek fakta terpercaya yang ramah pengguna; dan (3) birokrasi pengaduan publik yang konvensional, lambat, serta belum berbasis data geospasial (*GIS*) terintegrasi. Hal ini berakibat pada penanganan kendala wilayah yang lambat dan tidak efisien. Solusi untuk mengatasi masalah ini tidak cukup hanya dengan *chatbot* mandiri. Proyek <strong>KOMUNITAS</strong> hadir sebagai ekosistem digital terintegrasi berbasis kecerdasan buatan (*Artificial Intelligence*) guna menyederhanakan alur birokrasi sekaligus menyaring informasi keliru di tengah masyarakat.
-  </p>
-
-  <!-- ==========================================
-       BAB 1.2 USULAN SOLUSI
-       ========================================== -->
-  <h1 class="section-title">1.2 Usulan Solusi dan Fitur Utama</h1>
-
-  <p>
-    KOMUNITAS diusulkan sebagai platform pelayanan publik cerdas (*smart civic platform*). Proyek ini secara prinsipil **bukan chatbot biasa** yang sekadar meneruskan perintah teks ke API eksternal. KOMUNITAS dirancang sebagai kesatuan sistem yang menghubungkan warga dan pemerintah secara dinamis melalui tiga fitur utama yang dirancang ramah pengguna:
+    Akar permasalahan ini terletak pada ketidakseimbangan antara volume persebaran data dan kapasitas verifikasi faktual. Solusi klarifikasi informasi saat ini mengalami kendala struktural yang signifikan:
   </p>
 
   <ol>
-    <li><strong>WhatsApp Bot Anti-Hoaks (Akses Inklusif):</strong> Memungkinkan warga melakukan cek fakta instan hanya dengan meneruskan (*forward*) pesan teks mencurigakan ke nomor WhatsApp resmi. Ini adalah solusi inklusif yang dirancang khusus untuk menjangkau masyarakat pedesaan atau lansia yang memiliki keterbatasan akses peramban web (*digital divide*).</li>
-    <li><strong>Pengecek Fakta Real-Time Web (Fact-Checker):</strong> Fitur validasi klaim berbasis web yang secara otomatis menelusuri mesin pencari secara *real-time* untuk menganalisis kebenaran informasi, menghasilkan nilai keyakinan (*confidence score*), dan menyajikan pranala berita klarifikasi resmi sebagai bukti.</li>
-    <li><strong>Vision AI & Diagram Alir Birokrasi:</strong> Fitur pemrosesan dokumen fisik menggunakan *Optical Character Recognition* (OCR) untuk mengekstrak informasi penting secara otomatis, serta menyederhanakan prosedur administrasi pemerintah yang rumit menjadi diagram alir visual yang ringkas dan mudah dipahami.</li>
+    <li><strong>Siloisasi Sistem dan Hambatan Akses</strong>: Portal cek fakta konvensional menuntut inisiatif aktif pengguna untuk membuka peramban web atau mengunduh aplikasi terdedikasi. Hambatan ini menciptakan kesenjangan akses bagi masyarakat marginal, lansia, dan warga daerah terpencil.</li>
+    <li><strong>Keterbatasan Operasional Manual</strong>: Proses verifikasi klaim secara manual oleh agen manusia memerlukan waktu respons (latensi) yang tinggi. Di tengah kecepatan sirkulasi informasi digital, penanganan manual ini tidak mampu membendung persebaran disinformasi yang eksponensial.</li>
+    <li><strong>Birokrasi Pengaduan yang Tidak Terintegrasi</strong>: Sistem pelaporan masalah publik masih mengandalkan formulir statis konvensional tanpa adanya kecerdasan spasial (Geographic Information System) dan klasifikasi otomatis. Akibatnya, terjadi penumpukan dokumen aduan tidak terstruktur yang memperlambat alur kerja dinas terkait.</li>
   </ol>
 
-  <!-- ==========================================
-       BAB 1.3 PENDEKATAN TEKNIS
-       ========================================== -->
-  <h1 class="section-title">1.3 Pendekatan Teknis dan Arsitektur AI</h1>
-
-  <h2 class="subsection-title">A. Justifikasi Pemilihan Teknologi AI</h2>
   <p>
-    Sistem model bahasa besar (*Large Language Model*) konvensional rentan terhadap halusinasi informasi (*hallucination*) dan keterbatasan basis pengetahuan dinamis. Guna mengatasinya, KOMUNITAS menerapkan arsitektur **Retrieval-Augmented Generation (RAG)** yang dikombinasikan dengan metode **Hybrid Search** dan **Reciprocal Rank Fusion (RRF)**. Kombinasi ini dipilih karena *Vector Search* (pgvector) mampu mencari relevansi makna pertanyaan warga, sementara *Keyword Search* (BM25) menjaga ketepatan kata kunci eksak seperti nama lembaga atau pasal hukum. Hasil pencarian dari kedua metode digabungkan menggunakan algoritma RRF untuk menyajikan dokumen konteks paling relevan dan presisi bagi model AI sebelum menyusun jawaban akhir.
+    Solusi non-AI seperti pencarian kata kunci eksak atau logika keputusan berbasis IF-ELSE terbukti tidak memadai. Aturan pemrograman kaku gagal memahami sinonim kata, konteks bahasa sehari-hari, variasi dialek lokal, serta tidak memiliki kemampuan memproses bukti visual seperti dokumen fisik atau foto infrastruktur rusak di lapangan. Oleh karena itu, diperlukan integrasi kecerdasan buatan (Artificial Intelligence) untuk mengotomatisasi pengenalan makna semantik, mengolah data multimodal, dan menyederhanakan alur birokrasi pengaduan publik.
   </p>
 
-  <h2 class="subsection-title">B. Sistem Orkestrasi Multi-Agent</h2>
-  <p class="no-indent">Sistem ini membagi tugas komputasi ke dalam tiga agen kecerdasan buatan spesifik:</p>
-  <ul>
-    <li><strong>Reasoning Agent (DeepSeek):</strong> Memvalidasi kesesuaian dokumen RAG, menentukan kategori laporan, menyusun teks tanggapan formal, dan menilai prioritas laporan warga (*urgency scoring*).</li>
-    <li><strong>Vision Agent (Gemini 2.5 Flash):</strong> Melakukan proses OCR dokumen serta menganalisis konten visual dari foto aduan infrastruktur di lapangan.</li>
-    <li><strong>Fact-Checker Agent (Serper.dev + LLM):</strong> Melakukan verifikasi *hoaks* secara otomatis dengan menelusuri mesin pencari secara *real-time*.</li>
-  </ul>
+  <p>
+    Tujuan utama dari ekosistem KOMUNITAS adalah menyediakan platform pelayanan publik cerdas yang inklusif. Ekosistem ini menghubungkan masyarakat dengan otoritas pemerintah secara dinamis, menurunkan ambang batas akses verifikasi informasi, serta mempercepat respons penanganan infrastruktur wilayah berbasis data riil.
+  </p>
 
-  <h2 class="subsection-title">C. Tabel Alur Integrasi Data Sistem</h2>
-  <p class="no-indent">Tabel berikut menggambarkan bagaimana data diproses di dalam ekosistem KOMUNITAS:</p>
+  <!-- ==========================================
+       BAB 1.2 USULAN SOLUSI BERBASIS ARTIFICIAL INTELLIGENCE
+       ========================================== -->
+  <h1 class="section-title">1.2 Usulan Solusi Berbasis Artificial Intelligence</h1>
+
+  <p>
+    KOMUNITAS dirancang sebagai <em>smart civic platform</em> terintegrasi yang mendemokrasikan akses informasi valid dan mengefisiensikan manajemen pengaduan warga. Platform ini bukan sekadar antarmuka percakapan reaktif, melainkan ekosistem terpadu yang memadukan aksesibilitas instan dengan orkestrasi data di backend.
+  </p>
+
+  <p>
+    Inovasi utama terletak pada jembatan akses inklusif yang memanfaatkan infrastruktur pesan singkat WhatsApp berdampingan dengan portal web dinamis. Dengan pendekatan ini, masyarakat tidak perlu mengubah pola perilaku digital mereka, melainkan cukup memanfaatkan aplikasi pesan yang sudah akrab digunakan sehari-hari untuk melakukan verifikasi informasi dan pelaporan aduan. Di sisi pemerintah, platform ini menyajikan dasbor administratif berbasis spasial yang memetakan prioritas penanganan aduan secara visual dan real-time. Sistem ini menghilangkan proses birokrasi berlapis melalui otomatisasi ekstraksi data, transformasi informasi prosedural menjadi representasi visual yang mudah dipahami, serta pemetaan geospasial otomatis.
+  </p>
+
+  <!-- ==========================================
+       BAB 1.3 PEMANFAATAN ARTIFICIAL INTELLIGENCE
+       ========================================== -->
+  <h1 class="section-title">1.3 Pemanfaatan Artificial Intelligence</h1>
+
+  <p>
+    Sistem ini menggunakan arsitektur kecerdasan buatan terdistribusi yang membagi tugas komputasi ke dalam beberapa agen spesifik:
+  </p>
+
+  <ol>
+    <li><strong>Pipeline Inferensi AI</strong>: Proses dimulai dari penerimaan masukan warga (teks atau gambar) melalui gateway API. Validasi data awal dilakukan untuk memastikan integritas payload. Sebelum diteruskan ke model, mesin sensor data lokal (PII Redaction) mendeteksi dan menghapus informasi sensitif pelapor secara otomatis.</li>
+    <li><strong>Mekanisme Retrieval-Augmented Generation (RAG)</strong>: Untuk menjawab pertanyaan warga mengenai prosedur layanan publik, sistem menerapkan metode <em>Hybrid Search</em>. Metode ini menggabungkan pencarian semantik berbasis vektor (menggunakan model embedding 1536-dimensi pada pgvector PostgreSQL) dengan pencarian kata kunci tradisional (BM25). Hasil dari kedua metode digabungkan menggunakan algoritma <em>Reciprocal Rank Fusion</em> (RRF) untuk memilih potongan dokumen rujukan paling relevan. Dokumen ini disuntikkan ke dalam instruksi model bahasa besar (LLM) sebagai basis pengetahuan faktual (grounding).</li>
+    <li><strong>Reasoning dan Klasifikasi</strong>: Model orkestrator mengevaluasi relevansi dokumen RAG untuk menyusun tanggapan hukum atau panduan birokrasi secara objektif. Dalam modul pengaduan, agen penalaran menganalisis deskripsi teks laporan untuk menentukan kategori dinas terkait dan memberikan skor tingkat urgensi aduan (Kritis, Tinggi, Sedang, Rendah).</li>
+    <li><strong>Visi Komputer dan Analisis Dokumen (Vision AI)</strong>: Modul Vision mengekstrak informasi tekstual dari gambar dokumen fisik menggunakan <em>Optical Character Recognition</em> (OCR) dan menganalisis foto aduan infrastruktur di lapangan untuk memverifikasi validitas fisik laporan secara visual.</li>
+    <li><strong>Validasi Manusia (Human-in-the-Loop)</strong>: AI hanya memberikan rekomendasi klasifikasi, skor prioritas, dan draf balasan. Hak keputusan penuh untuk mengubah status hukum laporan, menugaskan petugas ke lapangan, serta mempublikasikan klarifikasi hoaks berada di tangan operator manusia. Hal ini menjaga akuntabilitas pelayanan publik.</li>
+  </ol>
+
+  <p>
+    Batasan utama kecerdasan buatan dalam sistem ini mencakup sensitivitas terhadap kualitas input gambar (resolusi rendah menghambat OCR), potensi bias bahasa pada model bahasa besar komersial, serta ketergantungan pada koneksi jaringan internet untuk API inferensi eksternal. Jika dokumen rujukan RAG tidak ditemukan, AI diinstruksikan secara ketat untuk menolak memberikan jawaban spekulatif guna mencegah halusinasi.
+  </p>
+
+  <!-- ==========================================
+       BAB 1.4 PENDEKATAN TEKNIS DAN SUMBER DATA
+       ========================================== -->
+  <h1 class="section-title">1.4 Pendekatan Teknis dan Sumber Data</h1>
 
   <table>
     <thead>
@@ -209,142 +225,93 @@
     </thead>
     <tbody>
       <tr>
-        <td>1. Input Warga</td>
-        <td>Formulir Web / Pesan WhatsApp (Teks & Foto)</td>
-        <td>Sistem menerima data dan menyaring informasi pribadi pelapor secara otomatis (*PII Redaction*).</td>
-        <td>Data aman siap dikirim ke mesin AI.</td>
+        <td><strong>Input</strong></td>
+        <td>Dokumen teks aduan, gambar bukti lapangan, koordinat GPS.</td>
+        <td>Validasi skema tipe data dan penyensoran data pribadi (PII Redaction) di backend.</td>
+        <td>Data terstruktur dan teramankan secara lokal.</td>
       </tr>
       <tr>
-        <td>2. Analisis AI</td>
-        <td>Data teks/gambar bersih</td>
-        <td>*Vision Agent* mengekstrak data gambar; *Reasoning Agent* menentukan tingkat urgensi dan kategori laporan.</td>
-        <td>Metadata terstruktur (lokasi, kategori, prioritas).</td>
+        <td><strong>Processing</strong></td>
+        <td>Data bersih bebas PII, gambar aduan.</td>
+        <td>Ekstraksi gambar (Vision AI OCR), hybrid search RAG, pembentukan vektor embedding.</td>
+        <td>Dokumen rujukan relevan dan ekstraksi teks visual.</td>
       </tr>
       <tr>
-        <td>3. Database & GIS</td>
-        <td>Metadata laporan terstruktur</td>
-        <td>*Nominatim API* menerjemahkan koordinat GPS ke tingkat kecamatan; Supabase menyimpan data dengan proteksi *RLS*.</td>
-        <td>Koordinat terpetakan pada *Live GIS Map* di dashboard admin.</td>
+        <td><strong>Output</strong></td>
+        <td>Teks dokumen RAG, skor prioritas.</td>
+        <td>Inferensi model LLM untuk klasifikasi urgensi dan draf jawaban klarifikasi.</td>
+        <td>Rekomendasi tindakan pada dasbor admin.</td>
       </tr>
       <tr>
-        <td>4. Tindak Lanjut</td>
-        <td>Peta aduan dinamis</td>
-        <td>Dasbor admin memberikan notifikasi *real-time* kepada petugas lapangan terdekat untuk verifikasi fisik.</td>
-        <td>Komunikasi dua arah via ruang *Chat WebSocket* warga-petugas.</td>
+        <td><strong>Feedback</strong></td>
+        <td>Log interaksi, koreksi manual admin.</td>
+        <td>Penyimpanan riwayat chat terenkripsi di database, sinkronisasi status via WebSocket.</td>
+        <td>Pembaruan data peta GIS dan performa model.</td>
       </tr>
     </tbody>
   </table>
   <p class="table-caption">Tabel 1. Alur Integrasi Pemrosesan Data Sistem KOMUNITAS</p>
 
-  <!-- ==========================================
-       BAB 1.4 RESPONSIBLE AI
-       ========================================== -->
-  <h1 class="section-title">1.4 Keamanan Data dan Responsible AI</h1>
   <p>
-    Implementasi kecerdasan buatan pada layanan publik menuntut standar keamanan yang tinggi. Proyek KOMUNITAS menerapkan prinsip *Responsible AI* secara menyeluruh melalui mitigasi risiko teknis yang dirangkum pada Tabel 2.
+    Sumber data penunjang sistem dihimpun dari dokumen regulasi pelayanan publik resmi dan pangkalan data hoaks nasional. Data regulasi diperoleh dari portal resmi lembaga pemerintah dalam format dokumen PDF terstruktur. Pangkalan data klarifikasi hoaks bersumber dari API terverifikasi dan basis data internal. Proses validasi dilakukan melalui hashing dokumen untuk mencegah redundansi, enkripsi data saat transit dan penyimpanan (AES-256), serta penerapan kebijakan keamanan Row Level Security (RLS) di database Supabase untuk membatasi hak akses berdasarkan peran pengguna.
   </p>
+
+  <!-- ==========================================
+       BAB 1.5 RESPONSIBLE AI
+       ========================================== -->
+  <h1 class="section-title">1.5 Responsible AI</h1>
 
   <table>
     <thead>
       <tr>
-        <th style="width: 25%;">Risiko AI</th>
-        <th style="width: 35%;">Dampak Potensial</th>
-        <th style="width: 40%;">Mitigasi Konkret pada Sistem KOMUNITAS</th>
+        <th style="width: 25%;">Prinsip</th>
+        <th style="width: 75%;">Implementasi Teknis pada Sistem KOMUNITAS</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td>**Halusinasi AI** (*Hallucination*)</td>
-        <td>AI menyajikan prosedur birokrasi atau informasi hukum yang salah kepada warga.</td>
-        <td>Penerapan batas konteks ketat (*Strict RAG*). AI wajib menolak menjawab dan merujuk ke kontak resmi jika dokumen rujukan tidak ditemukan.</td>
+        <td><strong>Privasi Data</strong></td>
+        <td>Penyensoran lokal menggunakan ekspresi reguler (Regex) untuk menyembunyikan NIK dan nomor telepon sebelum dikirim ke API eksternal.</td>
       </tr>
       <tr>
-        <td>**Kebocoran Data** (*PII Leak*)</td>
-        <td>Identitas pribadi atau nomor kontak pelapor terkirim dan tersimpan di server LLM eksternal.</td>
-        <td>*PII Redaction Engine* menyensor otomatis pola angka identitas (16 digit) dan telepon (+62...) di sisi server lokal sebelum dikirim ke API luar.</td>
+        <td><strong>Transparansi</strong></td>
+        <td>Penyajian nilai keyakinan (confidence score) numerik pada hasil cek fakta dan pencantuman tautan rujukan berita klarifikasi asli.</td>
       </tr>
       <tr>
-        <td>**Injeksi Perintah** (*Prompt Injection*)</td>
-        <td>Pengguna menyusupkan perintah jahat melalui input chat untuk meretas instruksi bawaan sistem.</td>
-        <td>Validasi ketat skema input menggunakan pustaka *Zod* di sisi backend dan pembatasan instruksi sistem (*system prompt isolation*).</td>
+        <td><strong>Mitigasi Halusinasi</strong></td>
+        <td>Pembatasan konteks ketat (Strict RAG) dengan temperatur rendah (0.1) untuk memastikan respons model bersifat deterministik.</td>
       </tr>
       <tr>
-        <td>**Salah Klasifikasi** (*False Positive/Negative*)</td>
-        <td>Berita benar diklasifikasikan hoaks, atau berita hoaks penting lolos dari penyaringan sistem.</td>
-        <td>Penyajian *confidence score* kuantitatif yang transparan dan kewajiban menampilkan tautan berita pembanding resmi.</td>
+        <td><strong>Keamanan Prompt</strong></td>
+        <td>Isolasi system prompt menggunakan validasi skema input (pustaka Zod) guna mencegah serangan injeksi perintah (prompt injection).</td>
       </tr>
       <tr>
-        <td>**Manipulasi Data** (*Data Poisoning*)</td>
-        <td>Pengguna luar menyuntikkan data hoaks ke basis pengetahuan pencarian sistem.</td>
-        <td>Penerapan kebijakan keamanan basis data *Row Level Security* (RLS) Supabase; hanya admin terverifikasi yang dapat menulis data RAG.</td>
+        <td><strong>Jejak Audit</strong></td>
+        <td>Pencatatan otomatis setiap aktivitas inferensi AI, perubahan status aduan, dan keputusan operator ke dalam tabel log database.</td>
+      </tr>
+      <tr>
+        <td><strong>Mitigasi Bias</strong></td>
+        <td>Pembersihan stopwords lokal Indonesia dan penggunaan data referensi yang bersumber langsung dari portal resmi kementerian terkait.</td>
       </tr>
     </tbody>
   </table>
-  <p class="table-caption">Tabel 2. Matriks Analisis Risiko dan Mitigasi Responsible AI KOMUNITAS</p>
-
-  <p>
-    Selain proteksi teknis di atas, sistem mematuhi arsitektur **Human-in-the-Loop**. Agen AI hanya berperan memberikan rekomendasi analisis (seperti klasifikasi tingkat urgensi laporan), sedangkan wewenang penuh atas perubahan status hukum laporan dan keputusan penugasan petugas lapangan sepenuhnya berada di tangan operator manusia.
-  </p>
+  <p class="table-caption">Tabel 2. Matriks Penerapan Responsible AI KOMUNITAS</p>
 
   <!-- ==========================================
-       BAB 1.5 DAMPAK & IMPLEMENTASI
+       BAB 1.6 DAMPAK DAN IMPLEMENTASI
        ========================================== -->
-  <h1 class="section-title">1.5 Dampak Sosial dan Skenario Penerapan</h1>
+  <h1 class="section-title">1.6 Dampak dan Implementasi</h1>
 
-  <h2 class="subsection-title">A. Skenario Penggunaan Nyata</h2>
   <p>
-    <strong>Skenario 1 (Mitigasi Hoaks):</strong> Ibu Dewi (54 tahun) menerima pesan berantai di WhatsApp mengenai penghentian sepihak bansos. Ia meneruskan pesan tersebut ke nomor WhatsApp Bot KOMUNITAS. Dalam 8 detik, ia mendapat balasan terotomatisasi: *“Klaim 90% Hoaks. Kementerian Sosial tetap menyalurkan bansos PKH sesuai jadwal resmi (sumber: kemensos.go.id).”* Hal ini mencegah kepanikan tanpa mengharuskan pengguna membuka peramban web atau mengunduh aplikasi tambahan.
-  </p>
-  <p>
-    <strong>Skenario 2 (Aduan Infrastruktur):</strong> Pak Rudi (38 tahun) memotret jalan berlubang di daerahnya dan mengunggahnya ke portal KOMUNITAS. *Vision Agent* membaca gambar dan melokalisasi koordinat secara otomatis. Laporan tersebut seketika tampil pada Peta GIS dinas pekerjaan umum kecamatan, memicu penugasan petugas lapangan, dan Pak Rudi dapat memantau proses perbaikan lewat ruang chat terenkripsi.
+    Implementasi ekosistem KOMUNITAS memberikan dampak terukur yang signifikan pada beberapa dimensi:
   </p>
 
-  <h2 class="subsection-title">B. Target Indikator Kinerja Prototipe</h2>
-  <p class="no-indent">Guna mengukur keberhasilan fungsionalitas sistem pada masa implementasi, ditetapkan target metrik pengujian berikut:</p>
-
-  <table>
-    <thead>
-      <tr>
-        <th style="width: 30%;">Indikator Kinerja</th>
-        <th style="width: 30%;">Target Kuantitatif</th>
-        <th style="width: 40%;">Metode Pengukuran / Alat Ukur</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>Waktu Respon API Layanan</td>
-        <td>&le; 50 milidetik</td>
-        <td>Pengujian performa menggunakan *k6 load testing*</td>
-      </tr>
-      <tr>
-        <td>Latensi Respon Chat AI (RAG)</td>
-        <td>&le; 3 detik (Mode Streaming)</td>
-        <td>Pengukuran waktu respon dari input hingga token pertama keluar</td>
-      </tr>
-      <tr>
-        <td>Akurasi Ekstraksi Vision (OCR)</td>
-        <td>&ge; 95% ketepatan karakter</td>
-        <td>Uji banding teks hasil ekstraksi dengan dokumen asli</td>
-      </tr>
-      <tr>
-        <td>Akurasi Analisis Fakta (Fact-Checker)</td>
-        <td>&ge; 90% ketepatan status</td>
-        <td>Validasi hasil analisis AI terhadap 100 database hoaks resmi</td>
-      </tr>
-      <tr>
-        <td>Waktu Aktif Sistem (*Uptime*)</td>
-        <td>99,9% aktif</td>
-        <td>Pemantauan sistem otomatis via *UptimeRobot*</td>
-      </tr>
-    </tbody>
-  </table>
-  <p class="table-caption">Tabel 3. Target Indikator Kinerja Prototipe KOMUNITAS</p>
-
-  <h2 class="subsection-title">C. Rencana Implementasi dan SDG Target</h2>
-  <p>
-    KOMUNITAS berkontribusi langsung pada **SDG 16** (Perdamaian, Keadilan, dan Kelembagaan yang Tangguh) dengan menyajikan transparansi penanganan aduan masyarakat, serta **SDG 10** (Berkurangnya Kesenjangan) dengan menyediakan akses validasi informasi yang inklusif lewat WhatsApp. Rencana peluncuran sistem dibagi menjadi tiga tahap terstruktur: (1) *Fase Pilot* (Bulan 1-3) berupa uji coba fungsionalitas di satu wilayah kecamatan; (2) *Fase Integrasi* (Bulan 4-9) untuk menghubungkan basis data dengan dinas pelayanan publik setempat; dan (3) *Fase Ekspansi* (Bulan 10-18) berupa sosialisasi meluas dan rilis nomor bot resmi secara nasional.
-  </p>
-
+  <ul>
+    <li><strong>Dampak terhadap Masyarakat</strong>: Warga memperoleh akses inklusif yang mudah untuk memverifikasi kebenaran informasi melalui WhatsApp, meminimalisasi penyebaran kepanikan akibat hoaks secara instan.</li>
+    <li><strong>Dampak terhadap Instansi</strong>: Pemerintah daerah dapat memotong waktu klasifikasi dan disposisi aduan fisik dari hitungan hari menjadi menit berkat otomatisasi penilaian tingkat urgensi dan kategori laporan.</li>
+    <li><strong>Dampak Teknologi</strong>: Penerapan arsitektur Hybrid Search berbasis pgvector meningkatkan efisiensi pencarian dokumen dan meminimalisasi biaya komputasi server.</li>
+    <li><strong>Dampak Keberlanjutan</strong>: Sistem dirancang untuk dapat direplikasi di berbagai wilayah administrasi melalui pemisahan data berbasis multi-tenancy. Pengembangan sistem direncanakan dalam tiga fase terstruktur: fase pilot di tingkat kecamatan, fase integrasi dinas sektoral, dan fase ekspansi skala nasional.</li>
+  </ul>
 </div>
 
 </body>

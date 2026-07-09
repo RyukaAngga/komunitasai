@@ -1,84 +1,81 @@
-# 💻 KOMUNITAS — Frontend Web Client Application
+# Aplikasi Klien Frontend — KOMUNITAS
 
-> **Aplikasi Antarmuka Warga & Dashboard Administrasi Pelayanan Publik.**
->
-> Proyek frontend React 18 teroptimasi penuh untuk **LKS EKKA National Competition 2026**.
+Aplikasi antarmuka web warga dan dashboard administrasi pelayanan publik yang dibangun menggunakan teknologi modern berbasis React 18, TypeScript, dan Vite.
 
----
-
-## 📌 Rumusan Masalah (Frontend Bottlenecks)
-
-Dalam merancang portal pelayanan publik berskala nasional, tim pengembang menghadapi tantangan teknis frontend berikut:
-1. **Kompleksitas Visualisasi Prosedur**: Teks birokrasi yang panjang sangat membosankan dan membingungkan jika hanya ditampilkan sebagai paragraf teks biasa. Kami membutuhkan alat yang mampu menerjemahkan alur teks tersebut menjadi diagram grafis interaktif secara instan di browser klien tanpa membebani performa.
-2. **Kinerja Rendah pada Peta Spasial (GIS)**: Memuat ratusan titik aduan warga secara real-time pada peta digital interaktif sering kali menyebabkan kelambatan rendering (frame drops) dan penggunaan memori yang besar di perangkat handphone warga kelas menengah ke bawah.
-3. **Sinkronisasi State Real-time**: Mengelola pembaruan pesan obrolan antara warga dan petugas secara instan, pemantauan progress pencarian data (Web Grounding), dan pembaruan notifikasi status tanpa overhead library state management yang berat (seperti Redux).
-4. **Keamanan Rute (Route Guarding)**: Mengamankan halaman dashboard admin dan petugas agar sama sekali tidak dapat diakses atau diintip oleh warga biasa yang tidak berwenang melalui manipulasi rute URL client-side.
+Dokumen ini menjelaskan kendala pengembangan, solusi teknis yang diterapkan, serta panduan pemasangan klien web.
 
 ---
 
-## 💡 Solusi yang Diterapkan (Frontend Solutions)
+## Rumusan Masalah dan Solusi Teknis
 
-Untuk mengatasi permasalahan di atas, kami merancang frontend dengan arsitektur web modern berkinerja tinggi:
+Dalam merancang dan mengoptimalkan antarmuka portal informasi publik nasional ini, tim pengembang berfokus mengatasi kendala teknis berikut:
 
-* **Penerjemah Alur Visual (Mermaid.js Integrator)**: Kami membuat komponen khusus `<MermaidDiagram />` yang secara dinamis menangkap output sintaks Mermaid hasil ekstraksi AI dan langsung mengompilasinya menjadi diagram alir SVG interaktif yang bersih, responsif, dan dapat di-zoom/pan oleh pengguna.
-* **Peta Cerdas Spasial Terkluster (Leaflet.js + Nominatim)**: Integrasi peta Leaflet dengan OpenStreetMap API yang teroptimasi. Kami menggunakan rendering layer berbasis canvas dan geocoding dinamis di sisi klien untuk mengubah koordinat GPS secara instan menjadi alamat detail regional (Provinsi, Kota/Kabupaten, Kecamatan) sehingga warga tidak perlu mengetik alamat secara manual.
-* **State Management Ultra Ringan (Zustand)**: Menggantikan Redux dengan Zustand store yang sangat minimalis namun tangguh. Zustand mengelola state autentikasi, chat session, kuota limit harian, serta data statistik pengaduan secara terpusat dengan mekanisme reaktivitas tinggi.
-* **Otentikasi & Proteksi Rute Berlapis**: Kami merancang komponen pembungkus `<ProtectedRoute />` dan `<AdminGuard />` yang menyaring status sesi autentikasi JWT Supabase dan klaim peran (*role claims*) pengguna sebelum merender halaman administratif secara ketat.
+### 1. Visualisasi Diagram Alir Prosedur Birokrasi
+* **Kendala**: Teks birokrasi pemerintah umumnya terlalu panjang dan membingungkan jika hanya ditampilkan dalam bentuk tulisan paragraf biasa.
+* **Solusi**: Kami membangun komponen khusus `<MermaidDiagram />` yang secara dinamis menerima sintaks diagram dari keluaran asisten AI dan merendernya ke dalam bentuk grafik alur kerja vektor (SVG) yang responsif langsung pada browser klien.
+
+### 2. Efisiensi Peta Interaktif Laporan Warga
+* **Kendala**: Merender peta interaktif dengan banyak data titik lokasi laporan secara real-time dapat membebani kinerja memori browser, terutama pada perangkat telepon seluler berspesifikasi rendah.
+* **Solusi**: Integrasi peta menggunakan Leaflet.js yang memanfaatkan rendering berbasis canvas dan penanganan koordinat dinamis. Kami menyematkan fitur geocoding otomatis di sisi klien untuk mengubah koordinat GPS secara instan menjadi nama wilayah administrasi resmi (Provinsi, Kota, Kecamatan) melalui OpenStreetMap Nominatim API.
+
+### 3. Sinkronisasi Status Sesi dan Data
+* **Kendala**: Kebutuhan pengelolaan state autentikasi, daftar obrolan aktif, kuota harian pengguna, dan notifikasi real-time yang cepat tanpa membebani ukuran bundel JS aplikasi.
+* **Solusi**: Kami menggunakan Zustand sebagai pengelola state global. Zustand sangat ringan dan efisien, sehingga mempercepat proses reaktivitas data antarmuka.
+
+### 4. Pengamanan Rute Halaman Administratif
+* **Kendala**: Mencegah akses tidak sah ke dashboard admin dan petugas pelayanan publik dari pengguna biasa.
+* **Solusi**: Rute diamankan melalui komponen pelindung `<ProtectedRoute />` dan `<AdminGuard />` yang menyaring klaim sesi autentikasi dan peran akun pengguna dari database Supabase sebelum memproses rendering halaman.
 
 ---
 
-## 🛠️ Tech Stack & Dependensi Utama
-* **Runtime / Compiler**: Node.js & Vite (Next-generation build tool)
+## Spesifikasi Teknologi
+* **Core Runtime**: Node.js & Vite (Next-generation build tool)
 * **Framework**: React 18 (TypeScript)
-* **Styling**: TailwindCSS (Utility-First CSS) & Framer Motion (untuk animasi transisi micro-interaction)
-* **Peta (GIS)**: Leaflet.js & React Leaflet
-* **State Management**: Zustand
+* **Styling**: TailwindCSS & Framer Motion (untuk animasi transisi antarmuka)
+* **GIS Map**: Leaflet.js & React Leaflet
+* **State Manager**: Zustand
 * **Router**: React Router DOM (v6)
 
 ---
 
-## 🚀 Panduan Instalasi & Pengembangan (Local Setup)
+## Panduan Instalasi dan Pengembangan Lokal
 
-### 1. Prasyarat
-Pastikan Anda sudah menginstal **Node.js (v18+)** dan **npm** di komputer Anda.
+### Prasyarat
+Pastikan komputer Anda telah terpasang **Node.js (v18+)** dan **npm**.
 
-### 2. Pemasangan Dependensi
-Arahkan terminal ke direktori frontend, lalu jalankan perintah:
+### Langkah 1: Instalasi Dependensi
+Jalankan perintah berikut di dalam direktori frontend:
 ```bash
 npm install
 ```
 
-### 3. Konfigurasi Lingkungan (`.env`)
-Buat berkas `.env` di root folder direktori `/frontend` dan lengkapi nilainya:
+### Langkah 2: Konfigurasi File Lingkungan (.env)
+Buat berkas `.env` di dalam direktori `/frontend` dan sesuaikan parameternya:
 ```env
-# URL API Backend produksi/lokal
+# URL base API Backend
 VITE_API_BASE_URL=http://localhost:3000
 
-# Kredensial Akses Klien Supabase (Samakan dengan Backend)
+# Kredensial Akses Supabase
 VITE_SUPABASE_URL=https://proyek-anda.supabase.co
 VITE_SUPABASE_ANON_KEY=kunci-anon-supabase-anda
 ```
 
-### 4. Menjalankan Server Pengembangan
-Jalankan perintah berikut untuk mengaktifkan hot-reloading server pengembangan lokal:
+### Langkah 3: Menjalankan Server Pengembangan
+Aktifkan server lokal menggunakan perintah:
 ```bash
 npm run dev
 ```
-*Aplikasi kini berjalan di `http://localhost:5173`.*
+Aplikasi web dapat diakses di browser melalui tautan `http://localhost:5173`.
 
-### 5. Build Produksi (Production Build Compilation)
-Untuk mengompilasi dan mengoptimalkan aset untuk siap di-deploy ke server produksi:
+### Langkah 4: Kompilasi Rilis Produksi
+Untuk melakukan build dan kompresi berkas statis siap pakai untuk server web:
 ```bash
 npm run build
 ```
-Hasil kompilasi akan berada di folder `/dist` dalam bentuk SPA HTML/CSS/JS statis yang siap di-serve oleh Nginx atau layanan hosting statis.
+Hasil kompilasi akan tersimpan di dalam folder `/dist`.
 
 ---
 
-## 📄 Lisensi (License)
+## Lisensi
 
-Platform frontend ini dirilis di bawah lisensi **MIT License**.
-
----
-
-*Dikembangkan dengan penuh dedikasi oleh **Tim Pencari Berkah**.*
+Proyek ini dirilis di bawah lisensi **MIT License**.

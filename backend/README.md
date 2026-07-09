@@ -1,46 +1,51 @@
-# ⚙️ KOMUNITAS — Backend API Server & AI Engine
+# API Server & AI Engine — KOMUNITAS
 
-> **Server Backend & Mesin Pemrosesan Kecerdasan Buatan (AI Engine).**
->
-> Proyek API Server berbasis Bun & Hono teroptimasi penuh untuk **LKS EKKA National Competition 2026**.
+Aplikasi server backend dan pemrosesan AI berbasis Bun Runtime, Hono framework, Supabase PostgreSQL, dan OpenRouter API.
 
----
-
-## 📌 Rumusan Masalah (Backend Challenges)
-
-Dalam membangun server API yang melayani jutaan transaksi data dan integrasi kecerdasan buatan, kami mengidentifikasi beberapa masalah backend yang krusial:
-1. **Keamanan & Kredensial Pengguna**: Menjamin data pribadi warga tidak bocor ke pihak luar saat berkonsultasi dengan kecerdasan buatan, dan mencegah eksploitasi penggunaan API token (LLM) gratisan dari spam bot.
-2. **Keterbatasan Akurasi AI (Halusinasi)**: Model LLM generatif standar sering kali salah memberikan data/prosedur hukum atau membuat-buat data non-eksak (halusinasi) yang berisiko menyesatkan informasi publik bagi warga.
-3. **Latensi Koneksi & Bottleneck Streaming**: Mengirimkan seluruh respon teks birokrasi yang panjang secara sekaligus dapat memicu latensi tinggi (Time-to-First-Token) yang mengganggu pengalaman pengguna.
-4. **Klasifikasi Cepat & Skalabilitas Aduan**: Backend harus memproses ratusan keluhan warga yang masuk tiap menit, mengekstrak data esensial, menentukan titik darurat (Urgensi), tanpa memblokir thread proses server utama (*non-blocking event loops*).
+Dokumen ini menjelaskan kendala pengembangan backend, keputusan teknis yang diambil, serta panduan instalasi server.
 
 ---
 
-## 💡 Solusi yang Diterapkan (Backend Solutions)
+## Rumusan Masalah dan Solusi Teknis
 
-Kami mengatasi seluruh permasalahan di atas dengan mengimplementasikan teknologi backend modern yang efisien:
+Dalam mengembangkan arsitektur backend pelayanan publik ini, beberapa tantangan teknis diselesaikan menggunakan solusi terstruktur:
 
-* **Bun & Hono Framework (Kinerja Ekstrim)**: Menggunakan Bun runtime yang memiliki mesin eksekusi JavaScript super cepat, dipadukan dengan framework router Hono.js yang minimalis dan efisien dalam konsumsi memori.
-* **Responsible AI — PII Redactor & Guardrail**:
-  * Kami membangun pembersih konten PII (*Personally Identifiable Information*) otomatis yang menggunakan regular expression (Regex) di backend untuk menyensor data NIK, No. HP, dan Email warga sebelum dikirim ke API OpenRouter.
-  * Modul guardrails kami menepis konten provokatif SARA, politik radikal, dan toxic secara instan tanpa perlu mengeluarkan kuota komputasi LLM.
-* **Hybrid Search & RAG (Reciprocal Rank Fusion)**:
-  * Kami menulis fungsi pencarian gabungan (*Hybrid Search*) di PostgreSQL. Saat warga bertanya, backend mengeksekusi pencarian vektor semantik (`pgvector` cosine similarity) dan pencarian teks penuh (*Full-Text Search*) secara bersamaan.
-  * Hasil dari kedua pencarian ini disinkronkan dan dihitung ulang bobotnya menggunakan algoritma **RRF** sebelum diumpankan sebagai basis data akurat bagi AI.
-* **Streaming Server-Sent Events (SSE)**: Respon AI dialirkan secara bertahap menggunakan protokol SSE (`ReadableStream`), memberikan interaksi instan bagi warga (time-to-first-token kurang dari 200ms).
-* **Asynchronous Urgency Scoring**: Proses analisis urgensi aduan didelegasikan secara asinkron ke background service sehingga warga mendapatkan respon pengiriman laporan instan tanpa menunggu proses evaluasi AI selesai.
+### 1. Keamanan Informasi Sensitif Warga (Responsible AI)
+* **Kendala**: Risiko kebocoran data sensitif warga (seperti NIK, Nomor HP, atau Email) ke API model kecerdasan buatan pihak ketiga saat berkonsultasi.
+* **Solusi**: Kami membangun filter penyaring PII (*Personally Identifiable Information*) berbasis pencocokan pola Regex di backend. Data sensitif tersebut disensor secara otomatis sebelum diteruskan ke OpenRouter.
+
+### 2. Akurasi Hasil Rujukan Regulasi (Mitigasi Halusinasi)
+* **Kendala**: Keterbatasan model bahasa generatif biasa dalam menyajikan aturan hukum pelayanan publik secara akurat dan konsisten.
+* **Solusi**: Kami mengimplementasikan metode pencarian hibrida yang menggabungkan pencarian teks penuh (FTS) bahasa Indonesia dan pencarian vektor semantik (*pgvector*), kemudian hasilnya digabungkan menggunakan algoritma **Reciprocal Rank Fusion (RRF)** sebagai konteks prompt AI.
+
+### 3. Latensi Pengiriman Respon AI yang Panjang
+* **Kendala**: Memuat seluruh jawaban panduan administrasi yang panjang sekaligus memicu waktu tunggu (latensi) yang tidak nyaman bagi warga.
+* **Solusi**: Penyediaan endpoint asisten AI menggunakan protokol **Server-Sent Events (SSE)** agar respon dikirim secara bertahap (karakter demi karakter) menggunakan `ReadableStream`.
+
+### 4. Skalabilitas Pemrosesan Aduan Warga
+* **Kendala**: Proses evaluasi urgensi pengaduan warga oleh AI memerlukan waktu beberapa detik, yang dapat memblokir proses respons pengaduan jika dilakukan secara sinkron.
+* **Solusi**: Backend memproses penentuan tingkat urgensi laporan (Kritis, Tinggi, Sedang, Rendah) secara asinkron di latar belakang (*background task*), sehingga warga mendapatkan konfirmasi pengiriman laporan dengan cepat.
 
 ---
 
-## 🗄️ Skema Prosedur Database RPC (Supabase SQL Editor)
+## Spesifikasi Teknologi
+* **Core Runtime**: Bun (Fast JS/TS Runtime)
+* **Framework**: Hono (Lightweight web framework)
+* **Database**: Supabase PostgreSQL dengan ekstensi `pgvector`
+* **AI Model/Embeddings**: OpenRouter API (Gemini-2.5-Flash, OpenAI text-embedding-3-small)
+* **Validation**: Zod (Runtime type validation)
 
-Pencarian hibrida didukung oleh fungsi database PostgreSQL khusus berikut:
+---
+
+## Skema Prosedur SQL Pencarian Hibrida (PostgreSQL)
+
+Fungsi database PostgreSQL berikut digunakan untuk menggabungkan pencarian vektor dan kata kunci:
 
 ```sql
--- Mengaktifkan ekstensi vector di Supabase
+-- Mengaktifkan ekstensi vector di database
 create extension if not exists vector;
 
--- Fungsi RPC untuk pencarian hibrida (RRF)
+-- Fungsi pencarian hibrida menggunakan kombinasi kemiripan vektor & FTS
 create or replace function hybrid_search_services(
   query_text text,
   query_embedding vector(1536),
@@ -88,44 +93,48 @@ $$;
 
 ---
 
-## 🚀 Panduan Instalasi & Pengembangan (Local Setup)
+## Panduan Instalasi dan Pengembangan Lokal
 
-### 1. Prasyarat
-Pastikan Anda sudah menginstal **Bun (v1.1+)** di komputer Anda.
+### Prasyarat
+Pastikan komputer Anda telah terpasang **Bun Runtime (v1.1+)**.
 
-### 2. Klon & Install Dependensi
+### Langkah 1: Instalasi Dependensi
+Jalankan perintah berikut di dalam direktori backend:
 ```bash
 bun install
 ```
 
-### 3. Konfigurasi Lingkungan (`.env`)
-Salin file `.env.example` menjadi `.env` di direktori `/backend`, lalu lengkapi isinya:
+### Langkah 2: Konfigurasi File Lingkungan (.env)
+Buat berkas `.env` di dalam direktori `/backend` dan lengkapi nilainya:
 ```env
 PORT=3000
 NODE_ENV=production
 
-# Supabase Database Key
+# Supabase URL & Service Role Key
 SUPABASE_URL=https://proyek-anda.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=kunci-service-role-supabase-anda
 
-# OpenRouter AI Credentials
+# OpenRouter Kunci API & Konfigurasi Model
 OPENROUTER_API_KEY=kunci-openrouter-anda
 DEFAULT_MODEL=google/gemini-2.5-flash
 EMBEDDING_MODEL=openai/text-embedding-3-small
 ```
 
-### 4. Menjalankan Server Utama
+### Langkah 3: Menjalankan Data Seed
+Untuk memuat basis pengetahuan awal layanan publik ke database:
+```bash
+bun run src/index.ts --seed
+```
+
+### Langkah 4: Menjalankan Server API
+Jalankan server dalam mode pengembangan:
 ```bash
 bun dev
 ```
-*Server API kini aktif di `http://localhost:3000`.*
+Server backend akan aktif di `http://localhost:3000`.
 
 ---
 
-## 📄 Lisensi (License)
+## Lisensi
 
-Platform backend ini dirilis di bawah lisensi **MIT License**.
-
----
-
-*Dikembangkan dengan penuh dedikasi oleh **Tim Pencari Berkah**.*
+Proyek backend ini dirilis di bawah lisensi **MIT License**.

@@ -1,61 +1,82 @@
-# 🏛️ KOMUNITAS — Portal Pelayanan Publik & Validasi Informasi Berbasis AI
+# KOMUNITAS — Portal Pelayanan Publik dan Validasi Informasi Berbasis AI
 
-> **Sistem Informasi Monorepo: Integrasi Layanan Aspirasi Warga, Verifikasi Klaim Hoaks (Web Grounding), Ringkasan Dokumen Regulasi (Mermaid.js Flowchart), dan Asisten RAG Pelayanan Publik.**
->
-> Proyek ini dikembangkan secara profesional untuk **LKS EKKA National Competition 2026**.
+Platform informasi publik monorepo terpadu yang dirancang untuk mendukung penyediaan data administratif, verifikasi klaim hoaks melalui penelusuran web waktu-nyata, ringkasan dokumen regulasi, dan sistem pelaporan warga terintegrasi.
 
----
-
-## 👥 Profil Tim Pengembang (Team Profile)
-
-Aplikasi ini dirancang, dibangun, dan dioptimalkan secara kolaboratif oleh tim **Pencari Berkah**:
-
-| Nama Anggota | Peran & Spesialisasi | Kontak / GitHub |
-| :--- | :--- | :--- |
-| **Fahri Angga Pratama** | Lead Architect / Backend Engineer / AI Engineer | [GitHub/RyukaAngga](https://github.com/RyukaAngga) |
-| **Fikri Awaluddin Rahmat** | Frontend Developer / UI-UX Engineer / GIS Specialist | [GitHub/FikriAwaluddin](https://github.com) |
-| **Alif Ikhwan** | DevOps Engineer / QA & Security Analyst / Database Administrator | [GitHub/AlifIkhwan](https://github.com) |
+Dokumen ini disusun sebagai bagian dari dokumentasi proyek untuk kompetisi tingkat nasional **LKS EKKA National Competition 2026**.
 
 ---
 
-## 📂 Struktur Monorepo (Monorepo Directory Layout)
+## Tim Pengembang (Pencari Berkah)
 
-Sistem ini diorganisasikan dalam satu Monorepo terpadu guna menyederhanakan pelacakan dependensi dan sinkronisasi API:
+Pengembangan sistem, perancangan arsitektur, dan integrasi kecerdasan buatan dalam platform ini dilakukan secara kolaboratif oleh:
 
-* 📁 **[Root Monorepo Directory](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/)** — Konfigurasi utama, dokumentasi global, lisensi, dan manajemen repository.
-* 📁 **[Frontend App Client (React & Vite)](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/frontend/)** — Antarmuka web warga, peta pengaduan interaktif, visualisasi diagram alir Mermaid.js, dan panel admin. (Baca selengkapnya di: [Frontend README](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/frontend/README.md)).
-* 📁 **[Backend API Server (Hono & Bun)](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/)** — Server API utama berbasis Hono, RAG Engine, Web Grounding search compiler, dan middleware proteksi sistem. (Baca selengkapnya di: [Backend README](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/README.md)).
-
----
-
-## 📌 Rumusan Masalah (Problem Statement) & Latar Belakang
-
-Pelayanan publik dan penyebaran informasi di era digital Indonesia saat ini masih menghadapi tiga kendala struktural yang besar:
-1. **Inefisiensi Birokrasi & Akses Informasi**: Dokumen regulasi pemerintah, undang-undang, serta persyaratan administratif sering kali ditulis dalam dokumen hukum yang sangat tebal, kaku, dan sulit dipahami oleh masyarakat awam. Warga menghabiskan banyak waktu hanya untuk mencari tahu prosedur dasar.
-2. **Ledakan Misinformasi & Hoaks**: Rumor dan hoaks menyebar dengan kecepatan tinggi di media sosial. Warga kesulitan memverifikasi kebenaran suatu klaim informasi secara objektif karena keterbatasan akses terhadap situs klarifikasi cek fakta resmi.
-3. **Sumbatan Jalur Pengaduan Warga**: Sistem pelaporan masalah daerah (seperti infrastruktur rusak atau sengketa sosial) sering kali lambat ditindaklanjuti. Laporan yang masuk tidak dipetakan berdasarkan lokasi koordinat riil dan tidak diklasifikasikan berdasarkan tingkat urgensinya, sehingga petugas kesulitan melakukan prioritas penanganan.
+* **Fahri Angga Pratama** — Perancangan Arsitektur, Pengembangan Backend, dan Integrasi Model AI.
+* **Fikri Awaluddin Rahmat** — Pengembangan Frontend, Desain Antarmuka (UI/UX), dan Integrasi Geografis (GIS).
+* **Alif Ikhwan** — Manajemen Infrastruktur (DevOps), Pengujian Keandalan Sistem, dan Keamanan Database.
 
 ---
 
-## 💡 Solusi yang Ditawarkan (Comprehensive Solutions)
+## Struktur Direktori Monorepo
 
-**KOMUNITAS** hadir sebagai jembatan cerdas berbasis kecerdasan buatan (AI) yang menghubungkan warga dengan birokrasi pemerintahan secara transparan, akurat, dan terpetakan:
+Sistem ini dikelola menggunakan struktur monorepo guna memudahkan sinkronisasi antarmuka dan API:
 
-* **Asisten AI Prosedur Birokrasi (RAG Pipeline)**: Warga dapat bertanya seputar administrasi publik dalam bahasa sehari-hari. AI mencari basis pengetahuan regulasi menggunakan pencarian vektor (*cosine similarity*) dan menyajikan jawaban yang akurat, legal, serta bebas halusinasi.
-* **Fungsi Cek Hoaks Cerdas (Web Search Grounding)**: Mengintegrasikan AI dengan mesin pencari web multi-fase untuk menyisir puluhan portal klarifikasi berita hoaks terpercaya di Indonesia secara real-time, memberikan *Confidence Score*, dan menampilkan tautan sumber klaim.
-* **Visualisasi Alur Dokumen (Interactive Flowchart)**: Pengguna dapat mengunggah dokumen legal atau birokrasi yang panjang. AI akan mengekstrak informasi penting dan langsung merendernya dalam bentuk diagram alir interaktif (`Mermaid.js`) agar warga dapat melihat urutan langkah birokrasi secara instan.
-* **Sistem Laporan Warga Spasial & Analisis Urgensi**: Warga dapat mengunggah laporan kerusakan/keluhan dengan melampirkan koordinat GPS riil (Live Map Leaflet). Di sisi backend, AI secara otomatis menganalisis dan menetapkan **Skor Urgensi** (Kritis, Tinggi, Sedang, Rendah) pada aduan tersebut agar petugas dapat memprioritaskan masalah darurat terlebih dahulu.
+* **[Direktori Root](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/)** — Konfigurasi repositori global, dokumentasi arsitektur, dan lisensi.
+* **[Aplikasi Frontend](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/frontend/)** — Klien web warga berbasis React 18, visualisasi alur birokrasi, dan dashboard admin.
+* **[Server Backend](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/)** — Server API berbasis Hono (Bun runtime), mesin pencarian hibrida, dan filter PII.
 
 ---
 
-## 🖥️ Arsitektur & Alur Data Global (System Architecture)
+## Latar Belakang dan Rumusan Masalah
 
-Sistem ini dirancang dengan prinsip pemisahan tanggung jawab (*Separation of Concerns*), performa tinggi, dan proteksi berlapis (*Defense in Depth*):
+Akses terhadap layanan birokrasi dan informasi publik di Indonesia sering kali terkendala oleh beberapa permasalahan mendasar:
+1. **Kompleksitas Regulasi**: Dokumen regulasi pemerintah umumnya ditulis dalam format hukum yang panjang dan kaku, sehingga masyarakat awam kesulitan memahami prosedur administratif secara mandiri.
+2. **Penyebaran Informasi Palsu (Hoaks)**: Kecepatan penyebaran rumor di ruang digital memerlukan alat verifikasi yang cepat dan objektif untuk membandingkan informasi dengan fakta dari portal berita tepercaya.
+3. **Penyampaian Pengaduan yang Kurang Efektif**: Laporan keluhan warga mengenai masalah infrastruktur daerah sering kali kurang presisi karena tidak disertai data lokasi (koordinat riil) dan belum diklasifikasikan secara otomatis berdasarkan skala prioritas kedaruratan.
+
+---
+
+## Solusi Teknis Platform
+
+Platform KOMUNITAS mengintegrasikan teknologi kecerdasan buatan (AI) untuk memberikan solusi atas permasalahan tersebut:
+
+* **Pencarian Informasi Birokrasi (RAG)**: Menggunakan pencarian vektor semantik (*cosine similarity*) untuk memetakan pertanyaan pengguna ke basis pengetahuan regulasi resmi yang telah diindeks di PostgreSQL, meminimalkan jawaban tidak akurat (halusinasi).
+* **Verifikasi Berita Instan (Web Grounding)**: Menghubungkan modul AI dengan pencarian internet multi-fase guna memverifikasi kebenaran informasi langsung terhadap portal cek fakta tepercaya, menampilkan *confidence score* serta pranala rujukan.
+* **Visualisasi Alur Kerja (Diagram Alir Mermaid.js)**: Mengekstrak dokumen administratif yang panjang dan merendernya ke dalam diagram birokrasi visual (`Mermaid.js`) secara langsung pada browser pengguna.
+* **Pengaduan Lokasional dan Analisis Prioritas**: Warga dapat mengirim laporan disertai foto dan koordinat GPS (menggunakan Leaflet.js). Backend secara otomatis menggunakan AI untuk menentukan tingkat kedaruratan laporan (Kritis, Tinggi, Sedang, Rendah) demi efisiensi penanganan oleh petugas.
+
+---
+
+## Kajian Desain Arsitektur dan Analisis Rekayasa Sistem
+
+Dalam proses perancangan dan pengembangan platform KOMUNITAS, terdapat beberapa keputusan rekayasa sistem penting yang kami ambil untuk menjaga akurasi, keamanan, dan keandalan sistem:
+
+### 1. Mitigasi Risiko Halusinasi AI melalui RAG
+Model bahasa besar (LLM) generatif memiliki risiko menghasilkan informasi yang tidak akurat (halusinasi). Untuk memastikan jawaban asisten AI seputar prosedur pelayanan publik sepenuhnya valid, kami menerapkan metode **Retrieval-Augmented Generation (RAG)**. 
+Ketika pengguna mengajukan pertanyaan, sistem tidak langsung meneruskannya ke LLM. Backend terlebih dahulu memindai database PostgreSQL menggunakan pencarian kemiripan vektor. Hasil pencarian regulasi resmi tersebut disisipkan sebagai instruksi konteks yang mengikat ke dalam sistem prompt. Kami memberikan instruksi ketat agar AI hanya memformulasikan jawaban berdasarkan rujukan yang disediakan dan secara tegas menolak menjawab jika data rujukan tidak mencukupi.
+
+### 2. Efisiensi Pencarian Informasi dengan Metode Hybrid Search (RRF)
+Kami menggabungkan metode **Vector Search** (pencarian kemiripan semantik menggunakan ekstensi `pgvector` di PostgreSQL) dan **Full-Text Search (FTS)** menggunakan indeks teks tradisional bahasa Indonesia. 
+Pencarian vektor sangat baik dalam memahami niat dan konteks kalimat pengguna, namun kurang efektif dalam mencari istilah eksak seperti nomor undang-undang atau singkatan lembaga. Sebaliknya, FTS sangat presisi pada pencarian kata kunci eksak tetapi tidak memahami sinonim atau konteks. Gabungan kedua hasil pencarian ini dinormalisasi menggunakan bobot gabungan sebelum disajikan kepada asisten AI, sehingga menghasilkan rujukan birokrasi yang jauh lebih lengkap dan akurat.
+
+### 3. Perlindungan Privasi Data Pengguna (PII Redaction)
+Kepatuhan terhadap aspek keamanan informasi pribadi warga menjadi prioritas utama. Karena platform berinteraksi dengan API AI pihak ketiga (OpenRouter), kami mengimplementasikan lapisan filter **PII Redaction** di backend. 
+Sebelum teks pengaduan dikirim ke model AI untuk analisis, filter ini secara otomatis mendeteksi dan menyamarkan informasi pribadi seperti Nomor Induk Kependudukan (NIK 16 digit), nomor telepon seluler (format Indonesia), dan alamat surat elektronik (email). Data sensitif tersebut disensor menggunakan token generik sebelum proses inferensi LLM dilakukan, guna mencegah kebocoran informasi identitas warga.
+
+### 4. Skema Penilaian Urgensi Pengaduan Secara Asinkron
+Untuk menjaga agar API pengaduan tetap responsif ketika menerima laporan warga yang padat, backend tidak memproses penilaian urgensi AI secara sinkron (yang memblokir thread proses server). 
+Pengiriman laporan dikonfirmasi secara instan ke sisi warga terlebih dahulu. Setelah itu, server menjalankan tugas latar belakang (*background task*) untuk meminta evaluasi tingkat kedaruratan dari model AI secara non-blocking, lalu secara otomatis memperbarui nilai status urgensi aduan di database. Hal ini menjamin skalabilitas server tetap terjaga dengan baik.
+
+### 5. Konsistensi Pembaruan Data Real-time
+Status pengaduan warga yang diperbarui oleh petugas di dashboard admin disiarkan secara instan menggunakan protokol **Server-Sent Events (SSE)**. Dibandingkan dengan metode penarikan berkala (*polling*), penggunaan koneksi searah yang ringan ini secara signifikan mengurangi beban overhead koneksi database dan menyajikan pembaruan status laporan secara instan pada browser warga.
+
+---
+
+## Alur Data dan Arsitektur Global
 
 ```mermaid
 graph TD
     %% Client Side
-    subgraph Client_Side [Frontend Web App]
+    subgraph Klien_Web [Antarmuka Klien]
         User[Warga / Pengguna]
         Admin[Petugas / Administrator]
         UI[React UI - TailwindCSS]
@@ -65,33 +86,33 @@ graph TD
     end
 
     %% Network & Gateway
-    subgraph Gateway_Layer [API Gateway & Middleware]
+    subgraph Gerbang_API [Middleware & Keamanan]
         Cors[CORS Middleware]
-        Limit[Rate Limiter - IP & Account]
-        Guard[AI Guardrails - Sensitif PII Check]
+        Limit[Rate Limiter - IP & Akun]
+        Guard[AI Guardrails - Filter PII]
     end
 
     %% Service API
-    subgraph App_Server [Backend API Server - Hono & Bun]
-        Hono[Hono Web Router]
+    subgraph Server_API [Backend Hono & Bun]
+        Hono[Router Hono]
         RAG[RAG Semantic Matcher]
         Search[Web Grounding Engine]
         OCR[Vision OCR Processor]
         Urgency[Urgency Analyzer]
-    end
+      end
 
     %% Database & Cloud Resources
-    subgraph Database_Cloud [Supabase Platform]
+    subgraph Supabase_Cloud [Database Supabase]
         DB[(PostgreSQL Database)]
         RLS[Row Level Security]
         PgVector[pgvector Extension]
-        RPC[match_services / hybrid_search RPC]
+        RPC[hybrid_search RPC]
         Storage[(Supabase Storage Buckets)]
     end
 
     %% External AI Models
-    subgraph LLM_API [Layanan AI Pihak Ketiga]
-        OpenRouter[OpenRouter AI - Gemini 2.5]
+    subgraph Model_AI [Layanan Eksternal]
+        OpenRouter[OpenRouter AI]
         Embedding[OpenAI Embedding API]
         OSM[OpenStreetMap Nominatim API]
     end
@@ -124,118 +145,68 @@ graph TD
 
 ---
 
-## 🚀 Panduan Instalasi & Menjalankan Proyek (Production Setup)
+## Panduan Instalasi dan Konfigurasi
 
-### 📋 Prasyarat Sistem
-* **Bun Runtime (v1.1.0 atau lebih baru)** — Untuk backend dan penyiapan skrip.
-* **Node.js (v18.0 atau lebih baru) & npm** — Untuk frontend React/Vite.
-* **Git** — Untuk klon repositori.
-* **Akun Supabase** — Layanan database PostgreSQL terkelola.
-* **Akun OpenRouter** — Untuk akses model AI.
+### Prasyarat Sistem
+* **Bun Runtime (v1.1.0 atau lebih baru)**
+* **Node.js (v18.0 atau lebih baru) & npm**
+* **Git**
 
----
-
-### Langkah 1: Klon Repositori & Persiapan Direktori
+### Langkah 1: Kloning Repositori
 ```bash
 git clone https://github.com/RyukaAngga/komunitasai.git
 cd komunitasai
 ```
 
----
+### Langkah 2: Migrasi Struktur Database Supabase
+Jalankan berkas SQL berikut secara berurutan pada SQL Editor dashboard Supabase Anda:
+1. `backend/database.sql` — Tabel dasar, indeks, dan aturan RLS.
+2. `backend/migration_hybrid_urgency.sql` — Ekstensi `pgvector` dan fungsi hibrida.
+3. `backend/migration_rag_documents.sql` — Metadata penyimpanan berkas RAG.
 
-### Langkah 2: Setup Database di Supabase
-1. Masuk ke dashboard proyek Supabase Anda.
-2. Buka bagian **SQL Editor**.
-3. Buat query baru, kemudian salin dan jalankan isi berkas SQL berikut secara berurutan:
-   * **[database.sql](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/database.sql)**: Mengonfigurasi tabel dasar, indeks, dan RLS untuk warga & petugas.
-   * **[migration_hybrid_urgency.sql](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/migration_hybrid_urgency.sql)**: Fungsi RRF pencarian hibrida, ekstensi `pgvector`, dan penyesuaian kolom urgensi aduan.
-   * **[migration_rag_documents.sql](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/migration_rag_documents.sql)**: Struktur penyimpanan metadata dokumen PDF RAG.
-
----
-
-### Langkah 3: Setup & Jalankan Backend (API Server)
-1. Masuk ke direktori backend:
+### Langkah 3: Setup Server Backend
+1. Pindah ke direktori backend:
    ```bash
    cd backend
    ```
-2. Instal dependensi menggunakan Bun:
+2. Instal dependensi:
    ```bash
    bun install
    ```
-3. Buat berkas konfigurasi lingkungan `.env` dari template:
+3. Salin dan buat berkas `.env`:
    ```bash
    cp .env.example .env
    ```
-4. Sesuaikan variabel lingkungan dalam berkas `.env` dengan kredensial Anda:
-   ```env
-   PORT=3000
-   NODE_ENV=production
-   SUPABASE_URL=https://proyek-anda.supabase.co
-   SUPABASE_SERVICE_ROLE_KEY=kunci-service-role-supabase-anda
-   OPENROUTER_API_KEY=kunci-openrouter-anda
-   DEFAULT_MODEL=google/gemini-2.5-flash
-   EMBEDDING_MODEL=openai/text-embedding-3-small
-   ```
-5. Jalankan seed data untuk basis pengetahuan awal pelayanan publik:
+4. Sesuaikan konfigurasi parameter database Supabase dan kunci OpenRouter dalam `.env`.
+5. Jalankan seed data awal:
    ```bash
    bun run src/index.ts --seed
    ```
-6. Jalankan server dalam mode produksi atau pengembangan:
+6. Jalankan server dalam mode pengembangan:
    ```bash
    bun dev
    ```
-   *Backend kini berjalan aktif di `http://localhost:3000`.*
 
----
-
-### Langkah 4: Setup & Jalankan Frontend (Client Web)
-1. Buka terminal baru dan masuk ke direktori frontend:
+### Langkah 4: Setup Klien Frontend
+1. Pindah ke direktori frontend:
    ```bash
    cd ../frontend
    ```
-2. Instal dependensi menggunakan npm:
+2. Instal dependensi:
    ```bash
    npm install
    ```
-3. Buat berkas konfigurasi lingkungan `.env` di root folder frontend:
-   ```env
-   VITE_API_BASE_URL=http://localhost:3000
-   VITE_SUPABASE_URL=https://proyek-anda.supabase.co
-   VITE_SUPABASE_ANON_KEY=kunci-anon-supabase-anda
-   ```
-4. Jalankan aplikasi web lokal:
+3. Buat berkas `.env` di direktori frontend dan masukkan kredensial URL API backend serta Supabase.
+4. Jalankan aplikasi web:
    ```bash
    npm run dev
    ```
-   *Frontend kini dapat diakses melalui browser di `http://localhost:5173`.*
 
 ---
 
-## 🧠 Analisis & FAQ Teknis Ujian Juri (Jury Technical Q&A)
+## Lisensi
 
-Berikut adalah ringkasan pertanyaan kritis yang kemungkinan diajukan oleh Dewan Juri LKS EKKA 2026 beserta jawaban teknis arsitekturnya:
-
-### Q1: Bagaimana Anda memastikan AI tidak "berhalusinasi" saat menjawab pertanyaan seputar prosedur birokrasi yang kompleks?
-> **Jawaban**: Kami menerapkan arsitektur **Retrieval-Augmented Generation (RAG)**. Sebelum pesan dikirim ke model bahasa OpenRouter (Gemini), backend kami terlebih dahulu mengubah pertanyaan user menjadi representasi vektor numerik menggunakan model embedding OpenAI. Kami kemudian melakukan pencarian hibrida di database Supabase PostgreSQL menggunakan fungsi *RPC match_services* untuk mengambil potongan informasi regulasi terpercaya. Hasil pencarian ini diinjeksikan langsung sebagai konteks utama (*grounding context*) ke dalam sistem prompt. AI diinstruksikan secara ketat untuk menjawab **hanya berdasarkan konteks tersebut** dan wajib menolak memberikan jawaban di luar basis data yang disediakan.
-
-### Q2: Mengapa Anda menggabungkan pencarian vektor (Vector Search) dengan pencarian kata kunci (Full-Text Search) menggunakan algoritma Reciprocal Rank Fusion (RRF)?
-> **Jawaban**: Pencarian vektor sangat baik dalam memahami kesamaan semantik dan maksud di balik kalimat warga, tetapi sering kali gagal mencocokkan kata kunci spesifik seperti kode singkatan regulasi, nomor undang-undang, atau nama daerah yang unik. Sebaliknya, *Full-Text Search (FTS)* berbasis indeks teks sangat presisi pada pencocokan kata kunci eksak tetapi tidak memahami konteks makna. Dengan menggabungkan keduanya menggunakan **RRF**, kami mengambil peringkat teratas dari kedua metode pencarian, menormalisasinya, dan menyajikan potongan informasi birokrasi dengan tingkat relevansi tertinggi kepada AI.
-
-### Q3: Bagaimana platform Anda menangani isu keamanan privasi data warga (AI Responsibility) ketika mengirimkan data laporan atau chat ke API pihak ketiga?
-> **Jawaban**: Kami menerapkan filter **PII Redaction (Responsible AI)** langsung di tingkat backend gateway. Sebelum data pesan dikirimkan ke server OpenRouter, middleware penyaring kami memindai teks input warga untuk mendeteksi informasi sensitif pribadi seperti nomor NIK (16 digit), nomor handphone Indonesia (format +62/08), serta alamat email menggunakan pola regular expression (Regex) teroptimasi. Jika ditemukan, data tersebut disensor (misal: `[SENSOR-NIK]`, `[SENSOR-PHONE]`) sebelum diteruskan ke LLM, guna menjamin tidak adanya kebocoran data pribadi warga.
-
-### Q4: Mengapa sistem lokal chatbot Anda tidak memblokir pertanyaan sensitif seperti "kekerasan seksual" atau "pemerkosaan" padahal itu mengandung kata sensitif?
-> **Jawaban**: Kami menyadari bahwa platform KOMUNITAS sering kali diandalkan untuk kebutuhan perlindungan warga (seperti kontak KPAI dan Komnas HAM). Jika kami memblokir kata kunci tersebut secara kasar (*naïve substring blocking*), warga korban kejahatan yang ingin mencari prosedur pelaporan kekerasan justru akan tertolak oleh sistem. Oleh karena itu, penyaring lokal guardrails kami hanya menargetkan kata kotor/kasar (*toxic*), ajakan pornografi vulgar, tindakan makar/kudeta, dan penghinaan SARA, sementara kata kunci hukum dan aduan formal tetap diperbolehkan lolos ke model AI yang memiliki filter moderasi bawaan yang jauh lebih dinamis.
-
-### Q5: Bagaimana mekanisme integrasi real-time pada pembaruan status laporan warga di dashboard admin?
-> **Jawaban**: Kami menggunakan mekanisme **Server-Sent Events (SSE)** (serta opsi WebSocket di client Supabase). Saat petugas mengubah status pengaduan (misal dari "Diproses" menjadi "Selesai") di dashboard admin, perubahan tersebut memicu pembaruan baris di tabel `citizen_reports` Supabase. Client frontend warga yang terhubung ke kanal pemantauan status laporan secara aktif akan menerima event payload real-time, sehingga notifikasi pembaruan status langsung muncul di layar warga tanpa perlu memuat ulang halaman (*polling*).
+Platform ini dirilis di bawah **MIT License**. Anda bebas menggunakan, memodifikasi, dan menyebarkan kode sumber ini untuk pengembangan lebih lanjut.
 
 ---
-
-## 📄 Lisensi (License)
-
-Platform ini dilisensikan di bawah **MIT License**. Dengan lisensi ini, Anda berhak menyalin, memodifikasi, mendistribusikan, dan menggunakan kode untuk keperluan komersial maupun akademis secara gratis, selama atribusi nama pencipta (Tim Pencari Berkah) tetap dicantumkan.
-
----
-
-*Dikembangkan dengan integritas tinggi oleh **Tim Pencari Berkah** untuk kemajuan tata kelola pelayanan publik Indonesia. 🇮🇩*
+*Dibuat oleh Tim **Pencari Berkah** untuk LKS EKKA National Competition 2026.*
