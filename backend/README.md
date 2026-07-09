@@ -6,6 +6,17 @@ Dokumen ini menjelaskan kendala pengembangan backend, keputusan teknis yang diam
 
 ---
 
+## Tim Pengembang (SMK MARHAS Margahayu)
+
+Aplikasi server backend ini dikembangkan dan dioptimalkan oleh:
+* **Fachri Angga Pratama** (Ketua Tim / Full Stack Developer)
+* **Alif Ikhwan Aulad Alhafidz** (Full Stack Creator)
+* **Fikri Awaluddin Rahmat** (Administrasi Projek)
+
+Aplikasi live dapat diakses melalui: **[komunitasai.web.id](https://komunitasai.web.id)**
+
+---
+
 ## Rumusan Masalah dan Solusi Teknis
 
 Dalam mengembangkan arsitektur backend pelayanan publik ini, beberapa tantangan teknis diselesaikan menggunakan solusi terstruktur:

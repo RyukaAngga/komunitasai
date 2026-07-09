@@ -6,6 +6,17 @@ Dokumen ini menjelaskan kendala pengembangan, solusi teknis yang diterapkan, ser
 
 ---
 
+## Tim Pengembang (SMK MARHAS Margahayu)
+
+Aplikasi klien frontend ini dikembangkan dan dioptimalkan oleh:
+* **Fachri Angga Pratama** (Ketua Tim / Full Stack Developer)
+* **Alif Ikhwan Aulad Alhafidz** (Full Stack Creator)
+* **Fikri Awalludin Rahmat** (Administrasi Projek)
+
+Aplikasi live dapat diakses melalui: **[komunitasai.web.id](https://komunitasai.web.id)**
+
+---
+
 ## Rumusan Masalah dan Solusi Teknis
 
 Dalam merancang dan mengoptimalkan antarmuka portal informasi publik nasional ini, tim pengembang berfokus mengatasi kendala teknis berikut:

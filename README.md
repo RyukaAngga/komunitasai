@@ -1,48 +1,65 @@
-# KOMUNITAS — Portal Pelayanan Publik dan Validasi Informasi Berbasis AI
+<p align="center">
+  <img src="frontend/public/assets/logo/komunitas.png" alt="KOMUNITAS Logo" width="120px" style="border-radius: 12px;"/>
+</p>
 
-Platform informasi publik monorepo terpadu yang dirancang untuk mendukung penyediaan data administratif, verifikasi klaim hoaks melalui penelusuran web waktu-nyata, ringkasan dokumen regulasi, dan sistem pelaporan warga terintegrasi.
+<h1 align="center">KOMUNITAS — Portal Pelayanan Publik dan Validasi Informasi Berbasis AI</h1>
 
-Dokumen ini disusun sebagai bagian dari dokumentasi proyek untuk kompetisi tingkat nasional **LKS EKKA National Competition 2026**.
+<p align="center">
+  <strong>Platform Terpadu Layanan Warga, Cek Fakta (Web Grounding), Ringkasan Regulasi (Mermaid Flowchart), dan Sistem Pengaduan Spasial Real-time.</strong>
+</p>
 
----
-
-## Tim Pengembang (Pencari Berkah)
-
-Pengembangan sistem, perancangan arsitektur, dan integrasi kecerdasan buatan dalam platform ini dilakukan secara kolaboratif oleh:
-
-* **Fahri Angga Pratama** — Perancangan Arsitektur, Pengembangan Backend, dan Integrasi Model AI.
-* **Fikri Awaluddin Rahmat** — Pengembangan Frontend, Desain Antarmuka (UI/UX), dan Integrasi Geografis (GIS).
-* **Alif Ikhwan** — Manajemen Infrastruktur (DevOps), Pengujian Keandalan Sistem, dan Keamanan Database.
+<p align="center">
+  <a href="https://komunitasai.web.id" target="_blank"><strong>Kunjungi Aplikasi Live (komunitasai.web.id)</strong></a>
+</p>
 
 ---
 
-## Struktur Direktori Monorepo
+## Deskripsi Umum Proyek
 
-Sistem ini dikelola menggunakan struktur monorepo guna memudahkan sinkronisasi antarmuka dan API:
+**KOMUNITAS** adalah platform pelayanan publik digital terintegrasi yang dirancang untuk mempercepat akses informasi, menyaring berita bohong (hoaks), meringkas dokumen regulasi pemerintah, serta memfasilitasi pelaporan keluhan warga secara presisi dan real-time. Platform ini dirancang khusus untuk kompetisi tingkat nasional **LKS EKKA National Competition 2026**.
 
-* **[Direktori Root](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/)** — Konfigurasi repositori global, dokumentasi arsitektur, dan lisensi.
-* **[Aplikasi Frontend](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/frontend/)** — Klien web warga berbasis React 18, visualisasi alur birokrasi, dan dashboard admin.
-* **[Server Backend](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/)** — Server API berbasis Hono (Bun runtime), mesin pencarian hibrida, dan filter PII.
+---
+
+## Profil Tim Pengembang (SMK MARHAS Margahayu)
+
+Platform ini dikembangkan dengan dedikasi tinggi oleh tim dari sekolah **SMK MARHAS Margahayu**:
+
+* **Fachri Angga Pratama** (Ketua Tim / Full Stack Developer)  
+  *Fokus Kerja: Arsitektur Basis Data Supabase, Logika RAG Engine, Web Grounding search compiler, dan sinkronisasi endpoint API di sisi Server serta Client.*
+* **Alif Ikhwan Aulad Alhafidz** (Full Stack Creator)  
+  *Fokus Kerja: Desain UI/UX Premium, Integrasi Visualisasi Mermaid.js, Kompilasi Frontend React 18, dan optimalisasi navigasi reaktif.*
+* **Fikri Awalludin Rahmat** (Administrasi Projek)  
+  *Fokus Kerja: Dokumentasi API Teknis, Manajemen Versi Konten RAG, Penyusunan Berkas SQL Migrasi, serta Analisis QA sistem.*
+
+---
+
+## Struktur Repositori Monorepo
+
+Untuk kemudahan koordinasi dependensi, proyek ini dikelola dalam satu monorepo terpadu:
+
+* **[Direktori Root](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/)** — Pusat dokumentasi monorepo, konfigurasi lisensi, dan file analisis sistem.
+* **[Aplikasi Frontend](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/frontend/)** — Aplikasi klien web warga dan dashboard admin (React 18 & Vite). Detail teknis ada di [Frontend README](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/frontend/README.md).
+* **[Server Backend](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/)** — Server API dan mesin pemrosesan AI (Hono & Bun). Detail teknis ada di [Backend README](file:///c:/ryuka/lks-ai-2026/KOMUNITAS/backend/README.md).
 
 ---
 
 ## Latar Belakang dan Rumusan Masalah
 
-Akses terhadap layanan birokrasi dan informasi publik di Indonesia sering kali terkendala oleh beberapa permasalahan mendasar:
-1. **Kompleksitas Regulasi**: Dokumen regulasi pemerintah umumnya ditulis dalam format hukum yang panjang dan kaku, sehingga masyarakat awam kesulitan memahami prosedur administratif secara mandiri.
-2. **Penyebaran Informasi Palsu (Hoaks)**: Kecepatan penyebaran rumor di ruang digital memerlukan alat verifikasi yang cepat dan objektif untuk membandingkan informasi dengan fakta dari portal berita tepercaya.
-3. **Penyampaian Pengaduan yang Kurang Efektif**: Laporan keluhan warga mengenai masalah infrastruktur daerah sering kali kurang presisi karena tidak disertai data lokasi (koordinat riil) dan belum diklasifikasikan secara otomatis berdasarkan skala prioritas kedaruratan.
+Efektivitas interaksi antara warga dan instansi publik di Indonesia saat ini masih terhambat oleh tiga masalah utama:
+1. **Sulitnya Memahami Regulasi Pemerintah**: Dokumen hukum dan alur administratif sering kali berlembar-lembar dan berbelit-belit, menyulitkan masyarakat awam yang memerlukan petunjuk cepat.
+2. **Tingginya Penyebaran Rumor dan Hoaks**: Tanpa alat klarifikasi terpercaya, warga rentan termakan isu palsu yang menyebar luas secara online.
+3. **Penyampaian Aspirasi Warga yang Lambat**: Sistem pelaporan konvensional sering kali tidak disertai koordinat GPS yang akurat dan tidak diurutkan berdasarkan tingkat kedaruratan laporan, sehingga menyulitkan respons cepat dari petugas lapangan.
 
 ---
 
-## Solusi Teknis Platform
+## Solusi Fungsional Platform
 
-Platform KOMUNITAS mengintegrasikan teknologi kecerdasan buatan (AI) untuk memberikan solusi atas permasalahan tersebut:
+Platform **KOMUNITAS** memberikan solusi terintegrasi melalui fitur-fitur berikut:
 
-* **Pencarian Informasi Birokrasi (RAG)**: Menggunakan pencarian vektor semantik (*cosine similarity*) untuk memetakan pertanyaan pengguna ke basis pengetahuan regulasi resmi yang telah diindeks di PostgreSQL, meminimalkan jawaban tidak akurat (halusinasi).
-* **Verifikasi Berita Instan (Web Grounding)**: Menghubungkan modul AI dengan pencarian internet multi-fase guna memverifikasi kebenaran informasi langsung terhadap portal cek fakta tepercaya, menampilkan *confidence score* serta pranala rujukan.
-* **Visualisasi Alur Kerja (Diagram Alir Mermaid.js)**: Mengekstrak dokumen administratif yang panjang dan merendernya ke dalam diagram birokrasi visual (`Mermaid.js`) secara langsung pada browser pengguna.
-* **Pengaduan Lokasional dan Analisis Prioritas**: Warga dapat mengirim laporan disertai foto dan koordinat GPS (menggunakan Leaflet.js). Backend secara otomatis menggunakan AI untuk menentukan tingkat kedaruratan laporan (Kritis, Tinggi, Sedang, Rendah) demi efisiensi penanganan oleh petugas.
+* **Asisten RAG Publik**: Menjawab konsultasi administratif warga menggunakan teknik pencarian vektor pada regulasi resmi, menjamin jawaban yang akurat dan terhindar dari bias informasi.
+* **Verifikasi Berita Instan**: Mesin AI yang terhubung dengan pencari web otomatis untuk memverifikasi klaim di internet terhadap situs cek fakta kredibel nasional.
+* **Ringkasan Regulasi Visual**: Mengonversi teks panjang berisi syarat administrasi menjadi bagan alir interaktif (`Mermaid.js`) yang langsung dirender di browser warga.
+* **Laporan Warga Spasial**: Peta interaktif (Leaflet.js) yang memetakan titik koordinat keluhan warga beserta pengelompokan prioritas kedaruratan (Urgensi) otomatis dari asisten AI.
 
 ---
 
@@ -206,7 +223,7 @@ Jalankan berkas SQL berikut secara berurutan pada SQL Editor dashboard Supabase 
 
 ## Lisensi
 
-Platform ini dirilis di bawah **MIT License**. Anda bebas menggunakan, memodifikasi, dan menyebarkan kode sumber ini untuk pengembangan lebih lanjut.
+Proyek ini dirilis di bawah lisensi **MIT License**. Anda bebas menyalin, memodifikasi, dan menyebarkan kode sumber ini sesuai dengan ketentuan lisensi.
 
 ---
-*Dibuat oleh Tim **Pencari Berkah** untuk LKS EKKA National Competition 2026.*
+*Dibuat oleh Tim **SMK MARHAS Margahayu** untuk LKS EKKA National Competition 2026.*
